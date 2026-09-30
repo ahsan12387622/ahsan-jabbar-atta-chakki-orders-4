@@ -12,11 +12,11 @@ var db = null;
 var firebaseReady = false;
 var firebaseLoaded = false;
 
-// Offline / sync state
 var isOnline = navigator.onLine;
 var pendingChangesCount = 0;
 var snapshotListeners = {};
 var firstLoadDone = false;
+var isSavingOrder = false;
 
 function initFirebase(callback) {
   if (firebaseLoaded) { if (callback) callback(); return; }
@@ -31,14 +31,13 @@ function initFirebase(callback) {
         firebase.initializeApp(firebaseConfig);
         db = firebase.firestore();
 
-        // ✅ Offline persistence enable
         db.enablePersistence({ synchronizeTabs: true }).then(function() {
           console.log('✅ Offline persistence enabled');
           firebaseReady = true;
           if (callback) callback();
         }).catch(function(err) {
           if (err.code === 'failed-precondition') {
-            console.log('⚠️ Multiple tabs open — persistence sirf ek tab mein');
+            console.log('⚠️ Multiple tabs open');
           } else if (err.code === 'unimplemented') {
             console.log('⚠️ Browser persistence support nahi karta');
           }
@@ -104,6 +103,44 @@ var DEFAULT_DASHBOARD = [
   { key: 'routes', label: 'Aaj Ke Routes', show: true, size: 100, view: 'list' }
 ];
 
+// ================== TOAST NOTIFICATION ==================
+var toastTimeout = null;
+function showToast(message, type, duration) {
+  var toast = document.getElementById('toast');
+  if (!toast) return;
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toast.className = 'toast';
+  toast.innerHTML = message;
+  if (type) toast.classList.add(type);
+  // Force reflow to restart animation
+  void toast.offsetWidth;
+  toast.classList.add('show');
+  toastTimeout = setTimeout(function() {
+    toast.classList.remove('show');
+  }, duration || 3000);
+}
+
+// ================== BUTTON LOADING HELPERS ==================
+function disableButton(btn, loadingText) {
+  if (!btn) return;
+  if (!btn.dataset.originalHtml) {
+    btn.dataset.originalHtml = btn.innerHTML;
+  }
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> ' + (loadingText || 'Saving...');
+}
+
+function enableButton(btn) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.classList.remove('loading');
+  if (btn.dataset.originalHtml) {
+    btn.innerHTML = btn.dataset.originalHtml;
+    delete btn.dataset.originalHtml;
+  }
+}
+
 // ================== ONLINE / OFFLINE DETECTION ==================
 function updateOnlineStatus() {
   isOnline = navigator.onLine;
@@ -115,20 +152,16 @@ function updateOnlineStatus() {
 
 window.addEventListener('online', function() {
   isOnline = true;
-  console.log('🌐 Online — syncing...');
+  console.log('🌐 Online');
   updateOnlineStatus();
-  var titleEl = document.getElementById('topbarTitle');
-  if (titleEl) {
-    var oldTitle = titleEl.textContent;
-    titleEl.textContent = '🌐 Online — Sync ho raha...';
-    setTimeout(function() { titleEl.textContent = oldTitle; }, 2000);
-  }
+  showToast('🌐 Internet wapas aa gaya — sync ho raha hai...', 'success', 2500);
 });
 
 window.addEventListener('offline', function() {
   isOnline = false;
   console.log('📴 Offline');
   updateOnlineStatus();
+  showToast('📴 Internet band — ab offline kaam karega', 'warning', 3000);
 });
 
 function updateOfflineBanner() {
@@ -136,10 +169,6 @@ function updateOfflineBanner() {
   if (!banner) return;
   if (!isOnline) {
     banner.style.display = 'block';
-    var txt = document.getElementById('offlineBannerText');
-    if (txt) {
-      txt.textContent = 'Internet band hai — sab kuch local save ho raha hai. Internet aane par automatic sync hoga.';
-    }
   } else {
     banner.style.display = 'none';
   }
@@ -148,18 +177,16 @@ function updateOfflineBanner() {
 function updatePendingBanner() {
   var banner = document.getElementById('pendingBanner');
   if (!banner) return;
-  if (pendingChangesCount > 0 && isOnline) {
+  if (pendingChangesCount > 0) {
     banner.style.display = 'block';
     var title = document.getElementById('pendingBannerTitle');
     var txt = document.getElementById('pendingBannerText');
     if (title) title.textContent = '⏳ ' + pendingChangesCount + ' change' + (pendingChangesCount > 1 ? 's' : '') + ' pending';
-    if (txt) txt.textContent = 'Sync ho raha hai... kuch der mein ho jayega';
-  } else if (pendingChangesCount > 0 && !isOnline) {
-    banner.style.display = 'block';
-    var title = document.getElementById('pendingBannerTitle');
-    var txt = document.getElementById('pendingBannerText');
-    if (title) title.textContent = '⏳ ' + pendingChangesCount + ' change' + (pendingChangesCount > 1 ? 's' : '') + ' pending';
-    if (txt) txt.textContent = 'Internet aane par automatic sync hoga';
+    if (txt) {
+      txt.textContent = isOnline
+        ? 'Sync ho raha hai... kuch der mein ho jayega'
+        : 'Internet aane par automatic sync hoga';
+    }
   } else {
     banner.style.display = 'none';
   }
@@ -168,7 +195,6 @@ function updatePendingBanner() {
 function updateSyncStatusIndicator() {
   var indicator = document.getElementById('syncStatusIndicator');
   if (!indicator) return;
-  var icon = indicator.querySelector('i');
   indicator.className = 'sync-status';
   if (!isOnline) {
     indicator.classList.add('offline');
@@ -207,46 +233,35 @@ function updateSettingsSyncStatus() {
   }
 }
 
-// ================== FIREBASE SYNC (Real-time + Offline) ==================
+// ================== FIREBASE SYNC ==================
 function setupRealtimeListeners() {
   if (!firebaseReady) return;
 
-  // Shopkeepers
   if (!snapshotListeners.shopkeepers) {
     snapshotListeners.shopkeepers = db.collection('shopkeepers').onSnapshot(function(snap) {
       shopkeepers = [];
       snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; shopkeepers.push(d); });
-      console.log('🔄 Shopkeepers updated:', shopkeepers.length);
+      console.log('🔄 Shopkeepers:', shopkeepers.length);
       refreshAllViews();
-    }, function(err) {
-      console.log('Shopkeepers listener error:', err);
-    });
+    }, function(err) { console.log('Shopkeepers listener:', err); });
   }
 
-  // Orders
   if (!snapshotListeners.orders) {
     snapshotListeners.orders = db.collection('orders').onSnapshot(function(snap) {
       orders = [];
       snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; orders.push(d); });
-      console.log('🔄 Orders updated:', orders.length);
+      console.log('🔄 Orders:', orders.length);
       refreshAllViews();
-    }, function(err) {
-      console.log('Orders listener error:', err);
-    });
+    }, function(err) { console.log('Orders listener:', err); });
   }
 
-  // Products
   if (!snapshotListeners.products) {
     snapshotListeners.products = db.collection('settings').doc('products').onSnapshot(function(doc) {
       if (doc.exists) products = doc.data().list || products;
-      console.log('🔄 Products updated');
       refreshAllViews();
-    }, function(err) {
-      console.log('Products listener error:', err);
-    });
+    }, function(err) { console.log('Products listener:', err); });
   }
 
-  // Business settings
   if (!snapshotListeners.business) {
     snapshotListeners.business = db.collection('settings').doc('business').onSnapshot(function(doc) {
       if (doc.exists) {
@@ -254,17 +269,13 @@ function setupRealtimeListeners() {
         if (d.bizName) settings.bizName = d.bizName;
       }
       applySettings();
-    }, function(err) {
-      console.log('Business listener error:', err);
-    });
+    }, function(err) { console.log('Business listener:', err); });
   }
 
-  // Users
   if (!snapshotListeners.users) {
     snapshotListeners.users = db.collection('users').onSnapshot(function(snap) {
       users = [];
       snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; users.push(d); });
-      console.log('🔄 Users updated:', users.length);
       if (currentUser) {
         for (var i = 0; i < users.length; i++) {
           if (users[i].id === currentUser.id) {
@@ -275,12 +286,9 @@ function setupRealtimeListeners() {
         }
       }
       if (isAdmin()) renderUsers();
-    }, function(err) {
-      console.log('Users listener error:', err);
-    });
+    }, function(err) { console.log('Users listener:', err); });
   }
 
-  // Routes
   if (!snapshotListeners.routes) {
     snapshotListeners.routes = db.collection('routes').onSnapshot(function(snap) {
       routes = [];
@@ -314,18 +322,15 @@ function setupRealtimeListeners() {
         }
         routes.push(d);
       });
-      console.log('🔄 Routes updated:', routes.length);
+      console.log('🔄 Routes:', routes.length);
       refreshAllViews();
-    }, function(err) {
-      console.log('Routes listener error:', err);
-    });
+    }, function(err) { console.log('Routes listener:', err); });
   }
 
   firstLoadDone = true;
 }
 
 function refreshAllViews() {
-  // Sirf active page update karo, ya agar user login hai
   if (!currentUser) return;
   renderDashboard();
   renderShopkeepers();
@@ -345,30 +350,29 @@ function refreshAllViews() {
 }
 
 function loadAllData(callback) {
-  // Real-time listeners setup karo (ek baar)
   setupRealtimeListeners();
-  // Thodi der baad callback
   setTimeout(function() { if (callback) callback(); }, 800);
 }
 
 function saveToFirebase(collection, id, data) {
-  if (!firebaseReady) return;
+  if (!firebaseReady) return Promise.reject('Firebase not ready');
   pendingChangesCount++;
   updateSyncStatusIndicator();
   updatePendingBanner();
   updateSettingsSyncStatus();
 
-  db.collection(collection).doc(String(id)).set(data).then(function() {
+  return db.collection(collection).doc(String(id)).set(data).then(function() {
     pendingChangesCount = Math.max(0, pendingChangesCount - 1);
     updateSyncStatusIndicator();
     updatePendingBanner();
     updateSettingsSyncStatus();
   }).catch(function(e) {
-    console.log('Save error (offline?):', e);
+    console.log('Save error:', e);
     pendingChangesCount = Math.max(0, pendingChangesCount - 1);
     updateSyncStatusIndicator();
     updatePendingBanner();
     updateSettingsSyncStatus();
+    throw e;
   });
 }
 
@@ -860,7 +864,7 @@ function goBack() {
 }
 
 function goHome() {
-  var activePage = document.querySelector('.page');
+  var activePage = document.querySelector('.page.active');
   if (activePage && activePage.id === 'dashboard') return;
   showPage('dashboard');
 }
@@ -948,7 +952,7 @@ function savePin() {
   closePinSetup();
   hidePinBanner();
   renderPinSettings();
-  alert('PIN save ho gaya! Agli baar website kholte hi PIN maanga jayega.');
+  showToast('✅ PIN save ho gaya!', 'success');
 }
 function removePin() {
   if (!confirm('PIN remove karne hain? Agli baar seedha dashboard khulega.')) return;
@@ -962,7 +966,7 @@ function removePin() {
     if (users[i].id === currentUser.id) { users[i].pin = ''; break; }
   }
   renderPinSettings();
-  alert('PIN remove ho gaya!');
+  showToast('PIN remove ho gaya', 'info');
 }
 function renderPinSettings() {
   var status = document.getElementById('pinStatusText');
@@ -1013,7 +1017,7 @@ function doSignup() {
     };
     db.collection('users').add(adminUser).then(function(ref) {
       err.textContent = '';
-      alert('Admin account ban gaya! Ab login karein.');
+      showToast('✅ Admin account ban gaya! Ab login karein.', 'success', 4000);
       hideSignup();
       document.getElementById('loginUser').value = user;
       document.getElementById('loginPass').value = '';
@@ -1049,7 +1053,6 @@ function doLogin() {
       setTimeout(function() { promptPinSetup(); }, 500);
     }
   }).catch(function(e) {
-    // Offline login check — cached user
     var cachedUser = JSON.parse(localStorage.getItem('currentUser'));
     if (cachedUser && cachedUser.user === user && cachedUser.pass === pass) {
       currentUser = cachedUser;
@@ -1076,7 +1079,6 @@ function hideSignup() {
 }
 function doLogout() {
   if (!confirm('Logout karna hai?')) return;
-  // Listeners band karo
   for (var key in snapshotListeners) {
     if (snapshotListeners[key]) {
       try { snapshotListeners[key](); } catch (e) {}
@@ -1107,7 +1109,7 @@ function changePassword() {
   if (firebaseReady) db.collection('users').doc(String(currentUser.id)).update({ pass: newP });
   document.getElementById('oldPass').value = '';
   document.getElementById('newPass').value = '';
-  alert('Password change ho gaya!');
+  showToast('✅ Password change ho gaya!', 'success');
 }
 
 function showApp() {
@@ -1140,7 +1142,6 @@ function manualSync() {
   var icon = document.getElementById('syncIcon');
   if (icon) icon.className = 'fa fa-sync-alt fa-spin';
   if (btn) btn.disabled = true;
-  // Listeners ko refresh karo
   for (var key in snapshotListeners) {
     if (snapshotListeners[key]) {
       try { snapshotListeners[key](); } catch (e) {}
@@ -1152,12 +1153,7 @@ function manualSync() {
     autoShiftPendingOrders();
     if (icon) icon.className = 'fa fa-sync-alt';
     if (btn) btn.disabled = false;
-    var titleEl = document.getElementById('topbarTitle');
-    var oldTitle = titleEl ? titleEl.textContent : '';
-    if (titleEl) {
-      titleEl.textContent = '✓ Sync ho gaya!';
-      setTimeout(function() { titleEl.textContent = oldTitle; }, 1500);
-    }
+    showToast('✅ Sync ho gaya!', 'success', 2000);
   }, 600);
 }
 
@@ -1331,11 +1327,11 @@ function applySettings() {
 function saveBizName() {
   var el = document.getElementById('setBizName');
   var name = el.value.trim();
-  if (!name) { alert('Naam likhein'); return; }
+  if (!name) { showToast('Naam likhein', 'warning'); return; }
   settings.bizName = name;
   saveSettingsFirebase();
   applySettings();
-  alert('Naam save ho gaya!');
+  showToast('✅ Naam save ho gaya!', 'success');
 }
 function renderSettings() {
   var nameEl = document.getElementById('setBizName');
@@ -1356,14 +1352,15 @@ function renderProductsList() {
 function addProduct() {
   var input = document.getElementById('newProductName');
   var name = input.value.trim();
-  if (!name) { alert('Naam likhein'); return; }
-  if (products.indexOf(name) !== -1) { alert('Already mojood hai'); return; }
+  if (!name) { showToast('Naam likhein', 'warning'); return; }
+  if (products.indexOf(name) !== -1) { showToast('Already mojood hai', 'warning'); return; }
   products.push(name);
   saveSettingsFirebase();
   input.value = '';
   renderProductsList();
   renderProductPickerGrid();
   populateSalesFilters();
+  showToast('✅ Product add ho gaya', 'success');
 }
 function deleteProduct(i) {
   if (!confirm('Delete: ' + products[i] + '?')) return;
@@ -1372,20 +1369,24 @@ function deleteProduct(i) {
   renderProductsList();
   renderProductPickerGrid();
   populateSalesFilters();
+  showToast('Product delete ho gaya', 'info');
 }
 
 // ================== USERS ==================
-function saveUser() {
-  if (!isAdmin()) { alert('Sirf Admin'); return; }
+function saveUser(btn) {
+  if (!isAdmin()) { showToast('Sirf Admin', 'error'); return; }
   var id = document.getElementById('userId').value;
   var user = document.getElementById('newUserName').value.trim();
   var pass = document.getElementById('newUserPass').value;
   var display = document.getElementById('newUserDisplay').value.trim();
-  if (!user || !pass) { alert('Username aur password zaroori!'); return; }
-  if (pass.length < 4) { alert('Password kam az kam 4 characters'); return; }
+  if (!user || !pass) { showToast('Username aur password zaroori!', 'warning'); return; }
+  if (pass.length < 4) { showToast('Password kam az kam 4 characters', 'warning'); return; }
   for (var i = 0; i < users.length; i++) {
-    if (users[i].user === user && users[i].id != id) { alert('Ye username pehle se mojood hai'); return; }
+    if (users[i].user === user && users[i].id != id) { showToast('Ye username pehle se mojood hai', 'error'); return; }
   }
+
+  if (btn) disableButton(btn, 'Saving...');
+
   var perms = {
     newOrder: document.getElementById('permNewOrder').checked,
     deliver: document.getElementById('permDeliver').checked,
@@ -1394,6 +1395,7 @@ function saveUser() {
     settings: document.getElementById('permSettings').checked,
     routes: document.getElementById('permRoutes').checked
   };
+
   if (id) {
     for (var i = 0; i < users.length; i++) {
       if (users[i].id == id) {
@@ -1402,8 +1404,12 @@ function saveUser() {
         saveToFirebase('users', users[i].id, users[i]);
       }
     }
-    alert('User save!'); resetUserForm(); renderUsers(); return;
+    if (btn) enableButton(btn);
+    showToast('✅ User save ho gaya!', 'success');
+    resetUserForm(); renderUsers();
+    return;
   }
+
   var newUser = {
     user: user, pass: pass, display: display || user, isAdmin: false, perms: perms, pin: '',
     menuLayout: JSON.parse(JSON.stringify(DEFAULT_MENU)),
@@ -1413,10 +1419,16 @@ function saveUser() {
   if (firebaseReady) {
     db.collection('users').add(newUser).then(function(ref) {
       newUser.id = ref.id;
-      users.push(newUser);
-      alert('User save ho gaya!');
+      if (btn) enableButton(btn);
+      showToast('✅ User save ho gaya!', 'success');
       resetUserForm(); renderUsers();
-    }).catch(function(e) { alert('Error: ' + e.message); });
+    }).catch(function(e) {
+      if (btn) enableButton(btn);
+      showToast('❌ Save nahi ho saka: ' + e.message, 'error', 4000);
+    });
+  } else {
+    if (btn) enableButton(btn);
+    showToast('Firebase load nahi hua', 'error');
   }
 }
 function resetUserForm() {
@@ -1465,6 +1477,7 @@ function deleteUser(id) {
   }
   users = newList;
   renderUsers();
+  showToast('User delete ho gaya', 'info');
 }
 function renderUsers() {
   if (!isAdmin()) return;
@@ -1671,7 +1684,7 @@ function openPendingShopModal(shopId) {
   }
 
   var deliverBtnHtml = can('deliver')
-    ? '<button class="btn primary small deliver-selected-btn" onclick="deliverSelectedItems()" id="deliverSelectedBtn" disabled>' +
+    ? '<button class="btn primary small deliver-selected-btn" onclick="deliverSelectedItems(this)" id="deliverSelectedBtn" disabled>' +
         '<i class="fa fa-check"></i> Deliver (<span id="deliverCount">0</span>)' +
       '</button>'
     : '';
@@ -1724,14 +1737,16 @@ function toggleSelectAllPending() {
   updateDeliverBtn();
 }
 
-function deliverSelectedItems() {
-  if (!can('deliver')) { alert('Permission nahi hai'); return; }
+function deliverSelectedItems(btn) {
+  if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
   var checks = document.querySelectorAll('.pending-item-check');
   var selectedIdx = [];
   for (var i = 0; i < checks.length; i++) {
     if (checks[i].checked) selectedIdx.push(parseInt(checks[i].getAttribute('data-idx')));
   }
-  if (selectedIdx.length === 0) { alert('Kam az kam ek product select karein!'); return; }
+  if (selectedIdx.length === 0) { showToast('Kam az kam ek product select karein!', 'warning'); return; }
+
+  if (btn) disableButton(btn, 'Delivering...');
 
   var shopId = currentPendingShopId;
   var shop = getShopById(shopId);
@@ -1764,12 +1779,15 @@ function deliverSelectedItems() {
     });
   }
 
+  if (btn) enableButton(btn);
   cleanupRouteAfterDelivery();
   refreshPendingShopModal();
 
   if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
     sendMultiDeliveredWhatsApp(deliveredItemsForWa, shop);
   }
+
+  showToast('✅ Delivered mark ho gaya!', 'success');
 }
 
 function closePendingShopModal() {
@@ -1797,13 +1815,16 @@ function refreshPendingShopModal() {
 }
 
 // ================== SHOPKEEPERS ==================
-function saveShopkeeper() {
-  if (!can('shopkeepers')) { alert('Permission nahi hai'); return; }
+function saveShopkeeper(btn) {
+  if (!can('shopkeepers')) { showToast('Permission nahi hai', 'error'); return; }
   var id = document.getElementById('shopId').value;
   var name = document.getElementById('shopName').value.trim();
   var mobile = document.getElementById('shopMobile').value.trim();
   var address = document.getElementById('shopAddress').value.trim();
-  if (!name || !mobile) { alert('Naam aur mobile zaroori!'); return; }
+  if (!name || !mobile) { showToast('Naam aur mobile zaroori!', 'warning'); return; }
+
+  if (btn) disableButton(btn, 'Saving...');
+
   if (id) {
     for (var i = 0; i < shopkeepers.length; i++) {
       if (shopkeepers[i].id == id) {
@@ -1813,19 +1834,33 @@ function saveShopkeeper() {
         saveToFirebase('shopkeepers', shopkeepers[i].id, shopkeepers[i]);
       }
     }
+    if (btn) enableButton(btn);
     resetShopForm(); renderShopkeepers();
     populateSalesFilters();
-    alert('Shopkeeper save!'); return;
+    showToast('✅ Shopkeeper save!', 'success');
+    return;
   }
+
   var newShop = { name: name, mobile: mobile, address: address, createdAt: new Date().toISOString() };
   if (firebaseReady) {
     db.collection('shopkeepers').add(newShop).then(function(ref) {
       newShop.id = ref.id;
-      shopkeepers.push(newShop);
+      if (btn) enableButton(btn);
       resetShopForm(); renderShopkeepers();
       populateSalesFilters();
-      alert('Shopkeeper save!');
-    }).catch(function(e) { alert('Error: ' + e.message); });
+      showToast('✅ Shopkeeper save!', 'success');
+    }).catch(function(e) {
+      if (btn) enableButton(btn);
+      if (!isOnline) {
+        showToast('📴 Offline — shopkeeper local save. Internet par sync hoga.', 'warning', 4000);
+        resetShopForm(); renderShopkeepers();
+      } else {
+        showToast('❌ Save nahi ho saka: ' + e.message, 'error', 4000);
+      }
+    });
+  } else {
+    if (btn) enableButton(btn);
+    showToast('Firebase load nahi hua', 'error');
   }
 }
 function resetShopForm() {
@@ -1836,7 +1871,7 @@ function resetShopForm() {
   document.getElementById('shopFormTitle').textContent = 'Naya Shopkeeper Add Karein';
 }
 function editShopkeeper(id) {
-  if (!can('shopkeepers')) { alert('Permission nahi hai'); return; }
+  if (!can('shopkeepers')) { showToast('Permission nahi hai', 'error'); return; }
   for (var i = 0; i < shopkeepers.length; i++) {
     if (shopkeepers[i].id == id) {
       var s = shopkeepers[i];
@@ -1850,7 +1885,7 @@ function editShopkeeper(id) {
   window.scrollTo(0, 0);
 }
 function deleteShopkeeper(id) {
-  if (!can('shopkeepers')) { alert('Permission nahi hai'); return; }
+  if (!can('shopkeepers')) { showToast('Permission nahi hai', 'error'); return; }
   if (!confirm('Pakka delete?')) return;
   var newList = [];
   for (var i = 0; i < shopkeepers.length; i++) {
@@ -1860,6 +1895,7 @@ function deleteShopkeeper(id) {
   shopkeepers = newList;
   renderShopkeepers();
   populateSalesFilters();
+  showToast('Shopkeeper delete ho gaya', 'info');
 }
 function renderShopkeepers() {
   var list = document.getElementById('shopkeepersList');
@@ -1973,8 +2009,8 @@ function getShopOrderSummaryText(shopId) {
   return parts.join(' • ');
 }
 
-function saveRoute() {
-  if (!can('routes')) { alert('Permission nahi hai'); return; }
+function saveRoute(btn) {
+  if (!can('routes')) { showToast('Permission nahi hai', 'error'); return; }
   var id = document.getElementById('routeId').value;
   var name = document.getElementById('routeName').value.trim();
   if (!name) name = generateRouteName();
@@ -1988,7 +2024,9 @@ function saveRoute() {
       items.push({ shopId: sid, product: prods[j] });
     }
   }
-  if (items.length === 0) { alert('Kam az kam ek product chunein!'); return; }
+  if (items.length === 0) { showToast('Kam az kam ek product chunein!', 'warning'); return; }
+
+  if (btn) disableButton(btn, 'Saving...');
 
   var currentRouteId = id || null;
   for (var r = 0; r < routes.length; r++) {
@@ -2031,7 +2069,8 @@ function saveRoute() {
         saveToFirebase('routes', routes[i].id, routes[i]);
       }
     }
-    alert('Route update ho gaya!');
+    if (btn) enableButton(btn);
+    showToast('✅ Route update ho gaya!', 'success');
     resetRouteForm(); renderRoutes();
     showPage('dashboard');
     return;
@@ -2047,10 +2086,23 @@ function saveRoute() {
     db.collection('routes').add(newRoute).then(function(ref) {
       newRoute.id = ref.id;
       routes.push(newRoute);
-      alert('Route ban gaya: ' + name);
+      if (btn) enableButton(btn);
+      showToast('✅ Route ban gaya: ' + name, 'success');
       resetRouteForm(); renderRoutes();
       showPage('dashboard');
-    }).catch(function(e) { alert('Error: ' + e.message); });
+    }).catch(function(e) {
+      if (btn) enableButton(btn);
+      if (!isOnline) {
+        showToast('📴 Offline — route local save. Internet par sync hoga.', 'warning', 4000);
+        resetRouteForm();
+        showPage('dashboard');
+      } else {
+        showToast('❌ Save nahi ho saka: ' + e.message, 'error', 4000);
+      }
+    });
+  } else {
+    if (btn) enableButton(btn);
+    showToast('Firebase load nahi hua', 'error');
   }
 }
 
@@ -2063,7 +2115,7 @@ function resetRouteForm() {
 }
 
 function editRoute(id) {
-  if (!can('routes')) { alert('Permission nahi hai'); return; }
+  if (!can('routes')) { showToast('Permission nahi hai', 'error'); return; }
   for (var i = 0; i < routes.length; i++) {
     if (routes[i].id == id) {
       var r = routes[i];
@@ -2084,7 +2136,7 @@ function editRoute(id) {
 }
 
 function deleteRoute(id) {
-  if (!can('routes')) { alert('Permission nahi hai'); return; }
+  if (!can('routes')) { showToast('Permission nahi hai', 'error'); return; }
   if (!confirm('Pakka route delete?')) return;
   var newList = [];
   for (var i = 0; i < routes.length; i++) {
@@ -2094,6 +2146,7 @@ function deleteRoute(id) {
   routes = newList;
   renderRoutes();
   updateRouteNameField();
+  showToast('Route delete ho gaya', 'info');
 }
 
 function renderRouteShopPicker() {
@@ -2474,7 +2527,7 @@ function closeRouteModal() {
 }
 
 function deliverRouteShop(routeId, shopId) {
-  if (!can('deliver')) { alert('Permission nahi hai'); return; }
+  if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
 
   var route = null;
   for (var i = 0; i < routes.length; i++) {
@@ -2491,7 +2544,7 @@ function deliverRouteShop(routeId, shopId) {
     if (routeItems[i].shopId == shopId) shopProductsInRoute.push(routeItems[i].product);
   }
   if (shopProductsInRoute.length === 0) {
-    alert('Is shopkeeper ka koi product is route mein nahi hai.');
+    showToast('Is shopkeeper ka koi product is route mein nahi hai.', 'warning');
     return;
   }
 
@@ -2552,7 +2605,7 @@ function deliverRouteShop(routeId, shopId) {
     sendMultiDeliveredWhatsApp(deliveredItemsForWa, shop);
   }
 
-  alert(shop.name + ' ke saare route products deliver ho gaye!');
+  showToast('✅ ' + shop.name + ' ke saare products deliver ho gaye!', 'success');
 }
 
 // ================== NEW ORDER (3-STEP) ==================
@@ -2561,9 +2614,13 @@ function prepareOrderForm() {
   selectedProductForOrder = null;
   selectedEditIndex = -1;
   currentOrderItems = [];
+  isSavingOrder = false;
   showNewOrderStep(1);
   var notesEl = document.getElementById('orderNotes');
   if (notesEl) notesEl.value = '';
+  // Reset save button
+  var saveBtn = document.getElementById('saveOrderBtn');
+  if (saveBtn) enableButton(saveBtn);
 }
 function showNewOrderStep(step) {
   var step1 = document.getElementById('shopPickerStep');
@@ -2696,7 +2753,7 @@ function cancelQty() {
 function confirmQtyAdd() {
   var m = parseInt(document.getElementById('qtyMaund').value) || 0;
   var k = parseInt(document.getElementById('qtyKg').value) || 0;
-  if (m === 0 && k === 0) { alert('Kam az kam maund ya kg daalein!'); return; }
+  if (m === 0 && k === 0) { showToast('Kam az kam maund ya kg daalein!', 'warning'); return; }
   if (selectedEditIndex >= 0 && selectedEditIndex < currentOrderItems.length) {
     currentOrderItems[selectedEditIndex].maund = m;
     currentOrderItems[selectedEditIndex].kg = k;
@@ -2744,10 +2801,18 @@ function removeAddedProduct(idx) {
   renderAddedProducts();
   renderProductPickerGrid();
 }
-function saveMultiOrder() {
-  if (!can('newOrder')) { alert('Permission nahi hai'); return; }
-  if (!selectedShopIdForOrder) { alert('Pehle shopkeeper chunein!'); return; }
-  if (currentOrderItems.length === 0) { alert('Kam az kam ek product add karein!'); return; }
+
+// ✅ NAYA saveMultiOrder — no duplicate, offline-safe
+function saveMultiOrder(btn) {
+  if (!can('newOrder')) { showToast('Permission nahi hai', 'error'); return; }
+  if (isSavingOrder) { showToast('Order save ho raha hai... intezaar karein', 'warning'); return; }
+  if (!selectedShopIdForOrder) { showToast('Pehle shopkeeper chunein!', 'warning'); return; }
+  if (currentOrderItems.length === 0) { showToast('Kam az kam ek product add karein!', 'warning'); return; }
+  if (!firebaseReady) { showToast('Firebase load nahi hua — page refresh karein', 'error'); return; }
+
+  isSavingOrder = true;
+  if (btn) disableButton(btn, 'Saving...');
+
   var shopId = selectedShopIdForOrder;
   var date = todayStr();
   var notes = document.getElementById('orderNotes').value.trim();
@@ -2765,40 +2830,47 @@ function saveMultiOrder() {
     createdBy: currentUser ? currentUser.user : 'unknown',
     createdAt: new Date().toISOString()
   };
-  if (firebaseReady) {
-    db.collection('orders').add(newOrder).then(function(ref) {
-      newOrder.id = ref.id;
-      orders.push(newOrder);
-      prepareOrderForm();
-      showPage('dashboard');
-      var shop = getShopById(shopId);
-      if (shop && shop.mobile) {
-        sendOrderWhatsApp(newOrder, shop);
-      }
-      if (!isOnline) {
-        var titleEl = document.getElementById('topbarTitle');
-        if (titleEl) {
-          var oldTitle = titleEl.textContent;
-          titleEl.textContent = '📴 Order local save — Internet par sync hoga';
-          setTimeout(function() { titleEl.textContent = oldTitle; }, 2500);
-        }
-      }
-    }).catch(function(e) {
-      console.log('Order save (offline queue):', e);
-      // Offline mein bhi UI update
-      newOrder.id = 'local_' + Date.now();
-      orders.push(newOrder);
-      prepareOrderForm();
-      showPage('dashboard');
-    });
-  } else {
-    // Firebase ready nahi — local
-    newOrder.id = 'local_' + Date.now();
-    orders.push(newOrder);
+
+  var shop = getShopById(shopId);
+  var wasOffline = !isOnline;
+
+  // Firebase par bhejo — chahe online ho ya offline, Firebase khud handle karega
+  db.collection('orders').add(newOrder).then(function(ref) {
+    // ✅ Success
+    newOrder.id = ref.id;
+    isSavingOrder = false;
+    if (btn) enableButton(btn);
+
+    // Toast
+    if (wasOffline) {
+      showToast('📴 Offline — order local save ho gaya. Internet aane par automatic sync hoga.', 'warning', 4000);
+    } else {
+      showToast('✅ Order save ho gaya!', 'success');
+    }
+
+    // Page change
     prepareOrderForm();
     showPage('dashboard');
-    alert('Order local save ho gaya. Internet aane par automatic sync hoga.');
-  }
+
+    // WhatsApp — sirf online par
+    if (!wasOffline && shop && shop.mobile) {
+      sendOrderWhatsApp(newOrder, shop);
+    }
+  }).catch(function(e) {
+    // ❌ Error (bahut kam hota hai offline mein — Firebase khud queue karta hai)
+    console.log('Order save error:', e);
+    isSavingOrder = false;
+    if (btn) enableButton(btn);
+
+    // Offline mein Firebase ke add() ne bhi queue mein daala hai, to user ko batao
+    if (!isOnline || String(e).indexOf('offline') !== -1) {
+      showToast('📴 Offline — order local save ho gaya. Internet aane par automatic sync hoga.', 'warning', 4000);
+      prepareOrderForm();
+      showPage('dashboard');
+    } else {
+      showToast('❌ Order save nahi ho saka: ' + (e.message || 'Unknown error'), 'error', 5000);
+    }
+  });
 }
 
 // ================== ORDERS PAGE ==================
@@ -2891,7 +2963,7 @@ function renderOrdersPage() {
 
 // ================== DELIVER MODAL ==================
 function openDeliverModal(orderId, product) {
-  if (!can('deliver')) { alert('Permission nahi hai'); return; }
+  if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
   currentDeliverOrderId = orderId;
   currentDeliverProduct = product;
   currentCombinedProduct = null;
@@ -2960,6 +3032,7 @@ function confirmDelivery() {
   if (shop && shop.mobile) {
     sendDeliveredWhatsApp(order, shop);
   }
+  showToast('✅ Delivered mark ho gaya!', 'success');
 }
 function markAllDelivered() {
   if (!can('deliver')) return;
@@ -2984,17 +3057,26 @@ function markAllDelivered() {
   if (shop && shop.mobile) {
     sendDeliveredWhatsApp(order, shop);
   }
+  showToast('✅ Poora deliver mark ho gaya!', 'success');
 }
-function confirmDeliverySmart() {
-  if (currentCombinedProduct) confirmCombinedDelivery();
-  else confirmDelivery();
+function confirmDeliverySmart(btn) {
+  if (btn) disableButton(btn, 'Delivering...');
+  setTimeout(function() {
+    if (currentCombinedProduct) confirmCombinedDelivery();
+    else confirmDelivery();
+    if (btn) enableButton(btn);
+  }, 100);
 }
-function markAllDeliveredSmart() {
-  if (currentCombinedProduct) markAllCombinedDelivered();
-  else markAllDelivered();
+function markAllDeliveredSmart(btn) {
+  if (btn) disableButton(btn, 'Delivering...');
+  setTimeout(function() {
+    if (currentCombinedProduct) markAllCombinedDelivered();
+    else markAllDelivered();
+    if (btn) enableButton(btn);
+  }, 100);
 }
 function openCombinedDeliverModal(productName, orderIds) {
-  if (!can('deliver')) { alert('Permission nahi hai'); return; }
+  if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
   currentCombinedProduct = productName;
   currentCombinedOrderIds = orderIds || [];
   var totalM = 0, totalK = 0;
@@ -3116,6 +3198,7 @@ function confirmCombinedDelivery() {
   if (waShop && waShop.mobile && waOrder) {
     sendDeliveredWhatsApp(waOrder, waShop);
   }
+  showToast('✅ Delivered mark ho gaya!', 'success');
 }
 function markAllCombinedDelivered() {
   if (!can('deliver')) return;
@@ -3151,6 +3234,7 @@ function markAllCombinedDelivered() {
   if (waShop && waShop.mobile && waOrder) {
     sendDeliveredWhatsApp(waOrder, waShop);
   }
+  showToast('✅ Poora deliver mark ho gaya!', 'success');
 }
 
 // ================== DELIVERY PAGE ==================
@@ -3570,19 +3654,15 @@ window.addEventListener('load', function() {
   updateOnlineStatus();
 
   initFirebase(function() {
-    // Pehli baar data load + listeners setup
     setTimeout(function() {
-      // User login check
       var loggedIn = localStorage.getItem('isLoggedIn') === 'true';
       var cachedUser = JSON.parse(localStorage.getItem('currentUser'));
 
       if (loggedIn && cachedUser) {
-        // Cached user se turant login (offline bhi chalega)
         currentUser = cachedUser;
         isLoggedIn = true;
         showApp();
 
-        // Firebase se user verify (agar online)
         if (firebaseReady && isOnline && cachedUser.id) {
           db.collection('users').doc(String(cachedUser.id)).get().then(function(doc) {
             if (doc.exists) {
@@ -3600,12 +3680,10 @@ window.addEventListener('load', function() {
         return;
       }
 
-      // Login screen dikhao
       document.getElementById('loginScreen').style.display = 'flex';
       document.getElementById('appWrapper').style.display = 'none';
       document.getElementById('pinScreen').style.display = 'none';
 
-      // Agar user ne pehle login kiya tha aur ab cached hai
       if (cachedUser && cachedUser.pin && String(cachedUser.pin).length === 4) {
         currentUser = cachedUser;
         showPinScreen();
