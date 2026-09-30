@@ -31,6 +31,25 @@ body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
 .pin-banner-text p { color: #4338ca; font-size: 12px; }
 .pin-banner-btns { display: flex; gap: 8px; }
 
+/* ============ OFFLINE BANNER ============ */
+.offline-banner { background: linear-gradient(135deg, #fee2e2, #fecaca); border-bottom: 3px solid #dc2626; padding: 14px 18px; position: sticky; top: 60px; z-index: 89; animation: slideDown 0.3s ease-out; }
+.offline-banner-content { display: flex; align-items: center; gap: 12px; max-width: 1300px; margin: 0 auto; flex-wrap: wrap; }
+.offline-banner-content > i { font-size: 28px; color: #dc2626; }
+.offline-banner-text { flex: 1; min-width: 180px; }
+.offline-banner-text strong { color: #991b1b; font-size: 15px; display: block; margin-bottom: 2px; }
+.offline-banner-text p { color: #b91c1c; font-size: 12px; }
+
+/* ============ PENDING BANNER ============ */
+.pending-banner { background: linear-gradient(135deg, #fef3c7, #fde68a); border-bottom: 3px solid #f59e0b; padding: 14px 18px; position: sticky; top: 60px; z-index: 88; animation: slideDown 0.3s ease-out; }
+.pending-banner-content { display: flex; align-items: center; gap: 12px; max-width: 1300px; margin: 0 auto; flex-wrap: wrap; }
+.pending-banner-content > i { font-size: 28px; color: #d97706; animation: pulse 1.5s infinite; }
+.pending-banner-text { flex: 1; min-width: 180px; }
+.pending-banner-text strong { color: #92400e; font-size: 15px; display: block; margin-bottom: 2px; }
+.pending-banner-text p { color: #b45309; font-size: 12px; }
+
+@keyframes slideDown { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+
 /* ============ TOPBAR ============ */
 .topbar { display: flex; justify-content: space-between; align-items: center; background: #1e293b; color: #fff; padding: 12px 18px; position: sticky; top: 0; z-index: 90; }
 .topbar-logo { font-size: 18px; font-weight: 700; color: #4ade80; display: flex; align-items: center; gap: 10px; }
@@ -38,6 +57,19 @@ body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
 .icon-btn { background: rgba(255,255,255,0.1); border: none; color: #fff; width: 42px; height: 42px; border-radius: 10px; cursor: pointer; font-size: 18px; transition: 0.2s; }
 .icon-btn:hover { background: rgba(255,255,255,0.2); }
 .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ============ SYNC STATUS INDICATOR ============ */
+.sync-status { display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; font-size: 10px; width: 14px; height: 14px; position: relative; }
+.sync-status i { font-size: 10px; }
+.sync-status.online { color: #4ade80; }
+.sync-status.online i { animation: onlinePulse 2s infinite; }
+.sync-status.syncing { color: #fbbf24; }
+.sync-status.syncing i { animation: spin 1s linear infinite; }
+.sync-status.offline { color: #ef4444; }
+.sync-status.pending { color: #f59e0b; }
+
+@keyframes onlinePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* ============ SIDEBAR ============ */
 .sidebar { width: 280px; background: #1e293b; color: #fff; position: fixed; top: 0; left: 0; bottom: 0; padding: 18px 0; overflow-y: auto; z-index: 100; transition: transform 0.3s; transform: translateX(-100%); }
@@ -562,4 +594,6 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   .history-tab { font-size: 12px; padding: 10px 8px; }
   .dash-edit-row .de-view-toggle button { font-size: 11px; padding: 4px 7px; }
   .route-shop-products { padding-left: 12px; }
+  .offline-banner-text p,
+  .pending-banner-text p { font-size: 11px; }
 }
