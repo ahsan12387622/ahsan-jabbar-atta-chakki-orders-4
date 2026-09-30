@@ -20,6 +20,14 @@ var isSavingOrder = false;
 var offlineOrdersQueue = [];
 var offlineRoutesQueue = [];
 
+// Deliver confirm modal ke liye
+var pendingDeliverRouteId = null;
+var pendingDeliverShopId = null;
+
+// WhatsApp share modal ke liye
+var pendingWhatsappUrl = null;
+var pendingWhatsappMessage = null;
+
 function initFirebase(callback) {
   if (firebaseLoaded) { if (callback) callback(); return; }
   firebaseLoaded = true;
@@ -321,7 +329,6 @@ function setupRealtimeListeners() {
           }
           d.shopIds = undefined;
         }
-        // Duplicate route skip karo (same name + createdAt)
         var routeKey = d.name + '|' + (d.createdAt || '');
         if (seenKeys[routeKey]) {
           console.log('⚠️ Duplicate route skip:', d.name);
@@ -717,7 +724,7 @@ function applyDashboardLayout() {
   }
 }
 
-// ================== HIDDEN MENU LIST ==================
+// ================== HIDDEN MENU ==================
 function renderHiddenMenuList() {
   var box = document.getElementById('hiddenMenuBox');
   var list = document.getElementById('hiddenMenuList');
@@ -740,7 +747,7 @@ function renderHiddenMenuList() {
   list.innerHTML = html;
 }
 
-// ================== WHATSAPP ==================
+// ================== WHATSAPP HELPERS ==================
 function formatWaNumber(mobile) {
   if (!mobile) return '';
   var digits = String(mobile).replace(/\D/g, '');
@@ -761,24 +768,37 @@ function formatOrderItemsText(items) {
   return lines.join('\n');
 }
 
-function sendOrderWhatsApp(order, shop) {
-  if (!shop || !shop.mobile) return false;
+// ✅ NAYA: WhatsApp Share Modal kholo (alert ki jagah)
+function openWhatsappShareModal(order, shop) {
+  if (!shop || !shop.mobile) {
+    console.log('Shop mobile nahi hai, WhatsApp nahi kholega');
+    return;
+  }
   var number = formatWaNumber(shop.mobile);
-  if (!number) return false;
+  if (!number) return;
   var bizName = settings.bizName || 'Atta Chakki';
   var itemsText = formatOrderItemsText(order.items);
   var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n' +
     'Aap ka order book ho chuka hai:\n\n' + itemsText + '\n\n' +
     'Inshallah jald hi deliver ho jayega.\nShukriya!\n- ' + bizName;
   var url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(msg);
-  window.open(url, '_blank');
-  return true;
+
+  pendingWhatsappUrl = url;
+  pendingWhatsappMessage = msg;
+
+  var modal = document.getElementById('whatsappShareModal');
+  var msgBox = document.getElementById('whatsappShareMessage');
+  if (msgBox) msgBox.textContent = msg;
+  if (modal) modal.classList.add('active');
 }
 
-function sendDeliveredWhatsApp(order, shop) {
-  if (!shop || !shop.mobile) return false;
+function openWhatsappDeliveredShareModal(order, shop) {
+  if (!shop || !shop.mobile) {
+    console.log('Shop mobile nahi hai, WhatsApp nahi kholega');
+    return;
+  }
   var number = formatWaNumber(shop.mobile);
-  if (!number) return false;
+  if (!number) return;
   var bizName = settings.bizName || 'Atta Chakki';
   var lines = [];
   for (var i = 0; i < order.items.length; i++) {
@@ -798,14 +818,23 @@ function sendDeliveredWhatsApp(order, shop) {
     'Aap ka order deliver ho chuka hai:\n\n' + itemsText + '\n\n' +
     'Shukriya!\n- ' + bizName;
   var url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(msg);
-  window.open(url, '_blank');
-  return true;
+
+  pendingWhatsappUrl = url;
+  pendingWhatsappMessage = msg;
+
+  var modal = document.getElementById('whatsappShareModal');
+  var msgBox = document.getElementById('whatsappShareMessage');
+  if (msgBox) msgBox.textContent = msg;
+  if (modal) modal.classList.add('active');
 }
 
-function sendMultiDeliveredWhatsApp(items, shop) {
-  if (!shop || !shop.mobile) return false;
+function openWhatsappMultiDeliveredShareModal(items, shop) {
+  if (!shop || !shop.mobile) {
+    console.log('Shop mobile nahi hai, WhatsApp nahi kholega');
+    return;
+  }
   var number = formatWaNumber(shop.mobile);
-  if (!number) return false;
+  if (!number) return;
   var bizName = settings.bizName || 'Atta Chakki';
   var lines = [];
   for (var i = 0; i < items.length; i++) {
@@ -822,8 +851,28 @@ function sendMultiDeliveredWhatsApp(items, shop) {
     'Aap ka order deliver ho chuka hai:\n\n' + itemsText + '\n\n' +
     'Shukriya!\n- ' + bizName;
   var url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(msg);
-  window.open(url, '_blank');
-  return true;
+
+  pendingWhatsappUrl = url;
+  pendingWhatsappMessage = msg;
+
+  var modal = document.getElementById('whatsappShareModal');
+  var msgBox = document.getElementById('whatsappShareMessage');
+  if (msgBox) msgBox.textContent = msg;
+  if (modal) modal.classList.add('active');
+}
+
+function closeWhatsappShareModal() {
+  var modal = document.getElementById('whatsappShareModal');
+  if (modal) modal.classList.remove('active');
+  pendingWhatsappUrl = null;
+  pendingWhatsappMessage = null;
+}
+
+function confirmWhatsappShare() {
+  if (pendingWhatsappUrl) {
+    window.open(pendingWhatsappUrl, '_blank');
+  }
+  closeWhatsappShareModal();
 }
 
 function getShopById(shopId) {
@@ -1855,10 +1904,10 @@ function deliverSelectedItems(btn) {
     if (btn) enableButton(btn);
     cleanupRouteAfterDelivery();
     refreshPendingShopModal();
-    if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
-      sendMultiDeliveredWhatsApp(deliveredItemsForWa, shop);
-    }
     showToast('✅ Delivered mark ho gaya!', 'success');
+    if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
+      openWhatsappMultiDeliveredShareModal(deliveredItemsForWa, shop);
+    }
   }, 300);
 }
 
@@ -2094,13 +2143,11 @@ function getShopOrderSummaryText(shopId) {
   return parts.join(' • ');
 }
 
-// ✅ UPDATED: renderRouteShopPicker — sirf free + current route wale shopkeepers
 function renderRouteShopPicker() {
   var box = document.getElementById('routeShopPicker');
   if (!box) return;
   var currentRouteId = document.getElementById('routeId').value || null;
 
-  // Pehle map banao: kaunsa shopkeeper kaunsa route mein hai
   var shopRouteMap = {};
   for (var r = 0; r < routes.length; r++) {
     var route = routes[r];
@@ -2120,9 +2167,7 @@ function renderRouteShopPicker() {
   var visible = [];
   for (var i = 0; i < shopkeepers.length; i++) {
     var s = shopkeepers[i];
-    // Agar ye shopkeeper kisi AUR route mein hai → skip
     if (shopRouteMap[s.id]) continue;
-    // Sirf woh dikhao jinka aaj pending order hai
     if (!shopHasTodayPendingOrder(s.id)) continue;
     visible.push(s);
   }
@@ -2191,7 +2236,6 @@ function toggleRouteProduct(shopId, product, checked) {
   renderRouteShopPicker();
 }
 
-// ✅ UPDATED: saveRoute — conflict check + duplicate fix
 function saveRoute(btn) {
   if (!can('routes')) { showToast('Permission nahi hai', 'error'); return; }
   var id = document.getElementById('routeId').value;
@@ -2209,7 +2253,6 @@ function saveRoute(btn) {
   }
   if (items.length === 0) { showToast('Kam az kam ek product chunein!', 'warning'); return; }
 
-  // Double-check: shopkeepers already kisi AUR route mein na hon
   var currentRouteId = id || null;
   var conflictShops = [];
   for (var r = 0; r < routes.length; r++) {
@@ -2241,7 +2284,6 @@ function saveRoute(btn) {
 
   var wasOffline = !isOnline;
 
-  // Purane route se conflict shopkeepers hatao
   for (var r = 0; r < routes.length; r++) {
     var route = routes[r];
     if (route.id === currentRouteId) continue;
@@ -2301,8 +2343,6 @@ function saveRoute(btn) {
     createdBy: currentUser ? currentUser.user : 'unknown',
     createdAt: new Date().toISOString()
   };
-
-  // Local ID do (UI ke liye)
   newRoute.id = 'local_route_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 
   if (firebaseReady) {
@@ -2315,10 +2355,9 @@ function saveRoute(btn) {
       newRoute.id = ref.id;
       console.log('✅ Route Firebase par:', ref.id);
     }).catch(function(e) {
-      console.log('Route add error (offline queue mein):', e);
+      console.log('Route add error (offline queue):', e);
     });
 
-    // UI ko turant update karo
     offlineRoutesQueue.push(newRoute);
 
     setTimeout(function() {
@@ -2626,7 +2665,7 @@ function openRouteModal(routeId) {
     }
 
     var deliverBtn = can('deliver')
-      ? '<button class="btn small success route-shop-deliver-btn" onclick="deliverRouteShop(\'' + route.id + '\', \'' + sid + '\')"><i class="fa fa-check"></i> Delivered</button>'
+      ? '<button class="btn small success route-shop-deliver-btn" onclick="openDeliverConfirmModal(\'' + route.id + '\', \'' + sid + '\')"><i class="fa fa-check"></i> Delivered</button>'
       : '';
 
     html += '<div class="route-detail-shop">' +
@@ -2667,7 +2706,8 @@ function closeRouteModal() {
   document.getElementById('routeModal').classList.remove('active');
 }
 
-function deliverRouteShop(routeId, shopId) {
+// ✅ NAYA: Deliver Confirm Modal
+function openDeliverConfirmModal(routeId, shopId) {
   if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
 
   var route = null;
@@ -2689,9 +2729,12 @@ function deliverRouteShop(routeId, shopId) {
     return;
   }
 
-  var confirmText = shop.name + ' ke ye products deliver karein?\n\n';
-  var deliveredItemsForWa = [];
+  // Modal mein products list dikhao
+  var body = document.getElementById('deliverConfirmBody');
+  var nameEl = document.getElementById('deliverConfirmShopName');
+  if (nameEl) nameEl.textContent = shop.name + ' ke ye products deliver karein?';
 
+  var html = '';
   for (var p = 0; p < shopProductsInRoute.length; p++) {
     var pName = shopProductsInRoute[p];
     var mTot = 0;
@@ -2714,14 +2757,82 @@ function deliverRouteShop(routeId, shopId) {
     if (mTot > 0) qtyParts.push(mTot + ' maund');
     for (var q = 0; q < kgList.length; q++) qtyParts.push(kgList[q] + ' kg');
     var qtyStr = qtyParts.join(', ') || '0 kg';
-    confirmText += '• ' + pName + ' — ' + qtyStr + '\n';
+
+    html += '<div class="confirm-item">' +
+      '<span class="ci-name">📦 ' + pName + '</span>' +
+      '<span class="ci-qty">' + qtyStr + '</span>' +
+    '</div>';
+  }
+  if (body) body.innerHTML = html;
+
+  // Store karo
+  pendingDeliverRouteId = routeId;
+  pendingDeliverShopId = shopId;
+
+  document.getElementById('deliverConfirmModal').classList.add('active');
+}
+
+function closeDeliverConfirmModal() {
+  document.getElementById('deliverConfirmModal').classList.remove('active');
+  pendingDeliverRouteId = null;
+  pendingDeliverShopId = null;
+}
+
+function confirmDeliverConfirmModal() {
+  var routeId = pendingDeliverRouteId;
+  var shopId = pendingDeliverShopId;
+  closeDeliverConfirmModal();
+  if (!routeId || !shopId) return;
+  deliverRouteShop(routeId, shopId);
+}
+
+// ✅ UPDATED: deliverRouteShop — ab confirm() nahi, seedha modal se aata hai
+function deliverRouteShop(routeId, shopId) {
+  if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
+
+  var route = null;
+  for (var i = 0; i < routes.length; i++) {
+    if (routes[i].id == routeId) { route = routes[i]; break; }
+  }
+  if (!route) return;
+
+  var shop = getShopById(shopId);
+  if (!shop) return;
+
+  var routeItems = route.items || [];
+  var shopProductsInRoute = [];
+  for (var i = 0; i < routeItems.length; i++) {
+    if (routeItems[i].shopId == shopId) shopProductsInRoute.push(routeItems[i].product);
+  }
+  if (shopProductsInRoute.length === 0) {
+    showToast('Is shopkeeper ka koi product is route mein nahi hai.', 'warning');
+    return;
+  }
+
+  var deliveredItemsForWa = [];
+
+  for (var p = 0; p < shopProductsInRoute.length; p++) {
+    var pName = shopProductsInRoute[p];
+    var mTot = 0;
+    var kgList = [];
+    for (var j = 0; j < orders.length; j++) {
+      var o = orders[j];
+      if (o.shopId != shopId) continue;
+      if (o.status !== 'Pending' && o.status !== 'Partial') continue;
+      for (var k = 0; k < o.items.length; k++) {
+        var oi = o.items[k];
+        if (oi.product !== pName) continue;
+        var remM = (parseInt(oi.maund) || 0) - (parseInt(oi.deliveredMaund) || 0);
+        var remK = (parseInt(oi.kg) || 0) - (parseInt(oi.deliveredKg) || 0);
+        if (remM <= 0 && remK <= 0) continue;
+        mTot += remM;
+        if (remK > 0) kgList.push(remK);
+      }
+    }
     deliveredItemsForWa.push({ product: pName, maund: mTot, kg: 0, kgList: kgList.slice() });
   }
 
-  confirmText += '\nConfirm?';
-
-  if (!confirm(confirmText)) return;
-
+  // Orders ko deliver mark karo
   for (var p = 0; p < shopProductsInRoute.length; p++) {
     var pName = shopProductsInRoute[p];
     for (var j = 0; j < orders.length; j++) {
@@ -2740,13 +2851,24 @@ function deliverRouteShop(routeId, shopId) {
   }
 
   cleanupRouteAfterDelivery();
-  closeRouteModal();
+  // ✅ Route modal band NAHI karo — route window khuli rahe
+  // ✅ Dashboard pr bhi NAHI jao
+  // Sirf route modal refresh karo
+  setTimeout(function() {
+    // Route modal ko refresh karo (agar khula hai)
+    var routeModal = document.getElementById('routeModal');
+    if (routeModal && routeModal.classList.contains('active')) {
+      openRouteModal(routeId);
+    }
+    renderDashboardRoutes();
+    renderDashboard();
+    showToast('✅ ' + shop.name + ' ke saare products deliver ho gaye!', 'success');
 
-  if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
-    sendMultiDeliveredWhatsApp(deliveredItemsForWa, shop);
-  }
-
-  showToast('✅ ' + shop.name + ' ke saare products deliver ho gaye!', 'success');
+    // WhatsApp share modal kholo
+    if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
+      openWhatsappMultiDeliveredShareModal(deliveredItemsForWa, shop);
+    }
+  }, 300);
 }
 
 // ================== NEW ORDER ==================
@@ -3008,8 +3130,9 @@ function saveMultiOrder(btn) {
     prepareOrderForm();
     showPage('dashboard');
 
+    // ✅ WhatsApp Share Modal kholo (agar online + shop mobile hai)
     if (!wasOffline && shop && shop.mobile) {
-      sendOrderWhatsApp(newOrder, shop);
+      openWhatsappShareModal(newOrder, shop);
     }
   }, 200);
 }
@@ -3103,7 +3226,7 @@ function renderOrdersPage() {
   list.innerHTML = html;
 }
 
-// ================== DELIVER MODAL ==================
+// ================== DELIVER MODAL (single product) ==================
 function openDeliverModal(orderId, product) {
   if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
   currentDeliverOrderId = orderId;
@@ -3171,10 +3294,10 @@ function confirmDelivery() {
   var pm = document.getElementById('pendingShopModal');
   if (pm && pm.classList.contains('active')) refreshPendingShopModal();
   var shop = getShopById(order.shopId);
-  if (shop && shop.mobile) {
-    sendDeliveredWhatsApp(order, shop);
-  }
   showToast('✅ Delivered mark ho gaya!', 'success');
+  if (shop && shop.mobile) {
+    openWhatsappDeliveredShareModal(order, shop);
+  }
 }
 function markAllDelivered() {
   if (!can('deliver')) return;
@@ -3196,10 +3319,10 @@ function markAllDelivered() {
   var pm = document.getElementById('pendingShopModal');
   if (pm && pm.classList.contains('active')) refreshPendingShopModal();
   var shop = getShopById(order.shopId);
-  if (shop && shop.mobile) {
-    sendDeliveredWhatsApp(order, shop);
-  }
   showToast('✅ Poora deliver mark ho gaya!', 'success');
+  if (shop && shop.mobile) {
+    openWhatsappDeliveredShareModal(order, shop);
+  }
 }
 function confirmDeliverySmart(btn) {
   if (btn) disableButton(btn, 'Delivering...');
@@ -3337,10 +3460,10 @@ function confirmCombinedDelivery() {
   cleanupRouteAfterDelivery();
   var pm = document.getElementById('pendingShopModal');
   if (pm && pm.classList.contains('active')) refreshPendingShopModal();
-  if (waShop && waShop.mobile && waOrder) {
-    sendDeliveredWhatsApp(waOrder, waShop);
-  }
   showToast('✅ Delivered mark ho gaya!', 'success');
+  if (waShop && waShop.mobile && waOrder) {
+    openWhatsappDeliveredShareModal(waOrder, waShop);
+  }
 }
 function markAllCombinedDelivered() {
   if (!can('deliver')) return;
@@ -3373,10 +3496,10 @@ function markAllCombinedDelivered() {
   cleanupRouteAfterDelivery();
   var pm = document.getElementById('pendingShopModal');
   if (pm && pm.classList.contains('active')) refreshPendingShopModal();
-  if (waShop && waShop.mobile && waOrder) {
-    sendDeliveredWhatsApp(waOrder, waShop);
-  }
   showToast('✅ Poora deliver mark ho gaya!', 'success');
+  if (waShop && waShop.mobile && waOrder) {
+    openWhatsappDeliveredShareModal(waOrder, waShop);
+  }
 }
 
 // ================== DELIVERY PAGE ==================
