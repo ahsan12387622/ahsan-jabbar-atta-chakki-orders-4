@@ -67,8 +67,34 @@
   </div>
 </div>
 
+<div id="offlineBanner" class="offline-banner" style="display:none;">
+  <div class="offline-banner-content">
+    <i class="fa fa-wifi"></i>
+    <div class="offline-banner-text">
+      <strong>📴 Offline Mode</strong>
+      <p id="offlineBannerText">Internet band hai — sab kuch local save ho raha hai</p>
+    </div>
+  </div>
+</div>
+
+<div id="pendingBanner" class="pending-banner" style="display:none;">
+  <div class="pending-banner-content">
+    <i class="fa fa-hourglass-half"></i>
+    <div class="pending-banner-text">
+      <strong id="pendingBannerTitle">Changes Pending</strong>
+      <p id="pendingBannerText">Internet aane par automatic sync hoga</p>
+    </div>
+  </div>
+</div>
+
 <div class="topbar">
-  <div class="topbar-logo"><i class="fa fa-wheat-awn"></i><span id="topbarTitle">Atta Chakki</span></div>
+  <div class="topbar-logo">
+    <i class="fa fa-wheat-awn"></i>
+    <span id="topbarTitle">Atta Chakki</span>
+    <span id="syncStatusIndicator" class="sync-status online" title="Online">
+      <i class="fa fa-circle"></i>
+    </span>
+  </div>
   <div class="topbar-actions">
     <button class="icon-btn" onclick="manualSync()" title="Data Sync" id="syncBtn">
       <i class="fa fa-sync-alt" id="syncIcon"></i>
@@ -478,6 +504,11 @@
         <div class="form-group" style="display:flex; align-items:flex-end;"><button class="btn primary" onclick="addProduct()" style="width:100%"><i class="fa fa-plus"></i> Add</button></div>
       </div>
       <div id="productsList" class="product-list"></div>
+    </div>
+    <div class="box">
+      <h3><i class="fa fa-wifi"></i> Sync Status</h3>
+      <p class="hint" id="syncStatusText">🟢 Online — Sab sync ho gaya</p>
+      <p class="hint" id="pendingChangesText" style="display:none;"></p>
     </div>
     <div class="box" id="hiddenMenuBox" style="display:none;">
       <h3><i class="fa fa-eye-slash"></i> Hidden Menu Items</h3>
