@@ -87,7 +87,18 @@ body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
 .page-header { margin-bottom: 20px; }
 .page-header h1 { font-size: 24px; margin-bottom: 4px; margin-top: 8px; }
 .page-sub { color: #64748b; font-size: 14px; }
+
+/* ============ PAGE NAV BUTTONS (BACK + HOME) ============ */
+.page-nav-btns { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.page-nav-btns .back-btn,
+.page-nav-btns .home-btn { background: #f1f5f9; border: none; padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 600; color: #334155; cursor: pointer; margin: 0; display: inline-flex; align-items: center; gap: 6px; transition: 0.2s; }
+.page-nav-btns .back-btn:hover { background: #e2e8f0; color: #1e293b; }
+.page-nav-btns .home-btn { background: #dcfce7; color: #166534; }
+.page-nav-btns .home-btn:hover { background: #bbf7d0; }
+
+/* Legacy back-btn (agar kahin bahar use ho) */
 .back-btn { background: #f1f5f9; border: none; padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 600; color: #334155; cursor: pointer; margin-bottom: 8px; }
+
 h2 { font-size: 18px; }
 h3 { font-size: 16px; margin-bottom: 12px; }
 .section-title { color: #16a34a; margin: 15px 0 12px; }
