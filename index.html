@@ -170,7 +170,10 @@
 
   <section id="neworder" class="page">
     <div class="page-header">
-      <button class="btn back-btn" onclick="newOrderBack()"><i class="fa fa-arrow-left"></i> Wapas</button>
+      <div class="page-nav-btns">
+        <button class="btn back-btn" id="neworderBackBtn" onclick="goBack()"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
       <h1 id="newOrderHeading">Naya Order</h1>
       <p class="page-sub" id="newOrderSub">Pehle shopkeeper chunein</p>
     </div>
@@ -225,8 +228,8 @@
           </div>
           <div class="qty-big-field">
             <label>KG</label>
-            <input type="number" id="qtyKg" min="0" max="39" placeholder="0" oninput="updateQtyPreview()" />
-            <small>0 se 39 kg</small>
+            <input type="number" id="qtyKg" min="0" placeholder="0" oninput="updateQtyPreview()" />
+            <small>Jitna chahein kg daalein</small>
           </div>
         </div>
 
@@ -245,7 +248,10 @@
 
   <section id="orders" class="page">
     <div class="page-header">
-      <button class="btn back-btn" onclick="showPage('dashboard')"><i class="fa fa-arrow-left"></i> Wapas</button>
+      <div class="page-nav-btns">
+        <button class="btn back-btn" id="ordersBackBtn" onclick="goBack()"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
       <h1><i class="fa fa-truck"></i> Orders / Loading</h1>
       <p class="page-sub">Kis dukaan pe kitna maal dena hai</p>
     </div>
@@ -263,7 +269,10 @@
 
   <section id="routes" class="page">
     <div class="page-header">
-      <button class="btn back-btn" onclick="showPage('dashboard')"><i class="fa fa-arrow-left"></i> Dashboard</button>
+      <div class="page-nav-btns">
+        <button class="btn back-btn" id="routesBackBtn" onclick="goBack()"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
       <h1><i class="fa fa-route"></i> Delivery Routes</h1>
       <p class="page-sub">Har shopkeeper ke products alag alag route mein assign karein</p>
     </div>
@@ -286,7 +295,14 @@
   </section>
 
   <section id="shopkeepers" class="page">
-    <div class="page-header"><h1>Shopkeepers</h1><p class="page-sub">Apne tamam shopkeepers manage karein</p></div>
+    <div class="page-header">
+      <div class="page-nav-btns">
+        <button class="btn back-btn" id="shopkeepersBackBtn" onclick="goBack()"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
+      <h1>Shopkeepers</h1>
+      <p class="page-sub">Apne tamam shopkeepers manage karein</p>
+    </div>
     <div class="box" id="shopkeeperFormBox">
       <h3 id="shopFormTitle">Naya Shopkeeper Add Karein</h3>
       <input type="hidden" id="shopId" />
@@ -302,12 +318,23 @@
   </section>
 
   <section id="delivery" class="page">
-    <div class="page-header"><h1>Delivery</h1><p class="page-sub">Pending orders shopkeeper ke hisaab se</p></div>
+    <div class="page-header">
+      <div class="page-nav-btns">
+        <button class="btn back-btn" id="deliveryBackBtn" onclick="goBack()"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
+      <h1>Delivery</h1>
+      <p class="page-sub">Pending orders shopkeeper ke hisaab se</p>
+    </div>
     <div id="deliveryList" class="list"></div>
   </section>
 
   <section id="history" class="page">
     <div class="page-header">
+      <div class="page-nav-btns">
+        <button class="btn back-btn" id="historyBackBtn" onclick="goBack()"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
       <h1><i class="fa fa-chart-line"></i> History / Reports</h1>
       <p class="page-sub">Sales report aur purane orders</p>
     </div>
@@ -387,7 +414,14 @@
   </section>
 
   <section id="users" class="page">
-    <div class="page-header"><h1><i class="fa fa-user-shield"></i> Users Management</h1><p class="page-sub">Naye users banao</p></div>
+    <div class="page-header">
+      <div class="page-nav-btns">
+        <button class="btn back-btn" id="usersBackBtn" onclick="goBack()"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
+      <h1><i class="fa fa-user-shield"></i> Users Management</h1>
+      <p class="page-sub">Naye users banao</p>
+    </div>
     <div class="box">
       <h3 id="userFormTitle">Naya User Banayein</h3>
       <input type="hidden" id="userId" />
@@ -412,7 +446,14 @@
   </section>
 
   <section id="settings" class="page">
-    <div class="page-header"><h1>Settings</h1><p class="page-sub">Website customise karein</p></div>
+    <div class="page-header">
+      <div class="page-nav-btns">
+        <button class="btn back-btn" id="settingsBackBtn" onclick="goBack()"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
+      <h1>Settings</h1>
+      <p class="page-sub">Website customise karein</p>
+    </div>
     <div class="box">
       <h3><i class="fa fa-pen"></i> Business Name</h3>
       <div class="form-group"><label>Website ka naam</label><input type="text" id="setBizName" /></div>
