@@ -610,13 +610,40 @@ function autoShiftPendingOrders() {
 }
 
 // ================== NAVIGATION HELPERS (BACK + HOME) ==================
+// Back button: New Order page par steps peeche peeche, baaki pages se Dashboard
 function goBack() {
-  // Browser history back — agar dashboard pe hain to kuch na kare
   var activePage = document.querySelector('.page.active');
-  if (activePage && activePage.id === 'dashboard') return;
-  window.history.back();
+  if (!activePage) return;
+  var pageId = activePage.id;
+
+  // Dashboard par kuch nahi kare
+  if (pageId === 'dashboard') return;
+
+  // New Order page — step-by-step back
+  if (pageId === 'neworder') {
+    var step3 = document.getElementById('quantityStep');
+    var step2 = document.getElementById('productPickerStep');
+
+    // Agar Quantity step par hain → Products step
+    if (step3 && step3.style.display === 'block') {
+      cancelQty();
+      return;
+    }
+    // Agar Products step par hain → Shopkeeper picker (products clear)
+    if (step2 && step2.style.display === 'block') {
+      changeShopkeeper();
+      return;
+    }
+    // Warna (Shopkeeper picker) → Dashboard
+    showPage('dashboard');
+    return;
+  }
+
+  // Baaki saare pages → Dashboard
+  showPage('dashboard');
 }
 
+// Home button: hamesha seedha Dashboard
 function goHome() {
   var activePage = document.querySelector('.page.active');
   if (activePage && activePage.id === 'dashboard') return;
@@ -2381,9 +2408,6 @@ function selectShopkeeperForOrder(shopId) {
   showNewOrderStep(2);
 }
 function changeShopkeeper() {
-  if (currentOrderItems.length > 0) {
-    if (!confirm('Shopkeeper change karne se add kiye gaye products hat jayenge. Continue?')) return;
-  }
   selectedShopIdForOrder = null;
   currentOrderItems = [];
   showNewOrderStep(1);
@@ -2545,9 +2569,6 @@ function newOrderBack() {
   if (step3 && step3.style.display === 'block') { cancelQty(); return; }
   var step2 = document.getElementById('productPickerStep');
   if (step2 && step2.style.display === 'block') {
-    if (currentOrderItems.length > 0) {
-      if (!confirm('Add kiye gaye products save nahi hue. Wapas shopkeeper chunne jaana hai?')) return;
-    }
     changeShopkeeper();
     return;
   }
