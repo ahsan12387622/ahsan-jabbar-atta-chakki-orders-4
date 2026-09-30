@@ -18,6 +18,9 @@ var snapshotListeners = {};
 var firstLoadDone = false;
 var isSavingOrder = false;
 
+// Local offline orders (jo Firebase par abhi nahi pahunche)
+var offlineOrdersQueue = [];
+
 function initFirebase(callback) {
   if (firebaseLoaded) { if (callback) callback(); return; }
   firebaseLoaded = true;
@@ -112,7 +115,6 @@ function showToast(message, type, duration) {
   toast.className = 'toast';
   toast.innerHTML = message;
   if (type) toast.classList.add(type);
-  // Force reflow to restart animation
   void toast.offsetWidth;
   toast.classList.add('show');
   toastTimeout = setTimeout(function() {
@@ -155,6 +157,8 @@ window.addEventListener('online', function() {
   console.log('🌐 Online');
   updateOnlineStatus();
   showToast('🌐 Internet wapas aa gaya — sync ho raha hai...', 'success', 2500);
+  // Sync offline queue (agar koi bacha ho)
+  syncOfflineQueue();
 });
 
 window.addEventListener('offline', function() {
@@ -167,11 +171,7 @@ window.addEventListener('offline', function() {
 function updateOfflineBanner() {
   var banner = document.getElementById('offlineBanner');
   if (!banner) return;
-  if (!isOnline) {
-    banner.style.display = 'block';
-  } else {
-    banner.style.display = 'none';
-  }
+  banner.style.display = isOnline ? 'none' : 'block';
 }
 
 function updatePendingBanner() {
@@ -241,7 +241,6 @@ function setupRealtimeListeners() {
     snapshotListeners.shopkeepers = db.collection('shopkeepers').onSnapshot(function(snap) {
       shopkeepers = [];
       snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; shopkeepers.push(d); });
-      console.log('🔄 Shopkeepers:', shopkeepers.length);
       refreshAllViews();
     }, function(err) { console.log('Shopkeepers listener:', err); });
   }
@@ -249,8 +248,16 @@ function setupRealtimeListeners() {
   if (!snapshotListeners.orders) {
     snapshotListeners.orders = db.collection('orders').onSnapshot(function(snap) {
       orders = [];
-      snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; orders.push(d); });
-      console.log('🔄 Orders:', orders.length);
+      snap.forEach(function(doc) {
+        var d = doc.data();
+        d.id = doc.id;
+        // Agar yeh local offline order hai (same data match), to flag hata do
+        d._offlinePending = false;
+        orders.push(d);
+      });
+      // Ab jab Firebase ne data diya, to offline queue clear karo
+      // (kyunki wo orders Firebase par pahunch gaye)
+      offlineOrdersQueue = [];
       refreshAllViews();
     }, function(err) { console.log('Orders listener:', err); });
   }
@@ -322,7 +329,6 @@ function setupRealtimeListeners() {
         }
         routes.push(d);
       });
-      console.log('🔄 Routes:', routes.length);
       refreshAllViews();
     }, function(err) { console.log('Routes listener:', err); });
   }
@@ -332,6 +338,9 @@ function setupRealtimeListeners() {
 
 function refreshAllViews() {
   if (!currentUser) return;
+  // Offline queue ko orders mein merge karo (agar Firebase ne abhi nahi diya)
+  mergeOfflineOrders();
+
   renderDashboard();
   renderShopkeepers();
   renderRoutes();
@@ -347,6 +356,45 @@ function refreshAllViews() {
   if (delPage && delPage.classList.contains('active')) renderDelivery();
   var pm = document.getElementById('pendingShopModal');
   if (pm && pm.classList.contains('active')) refreshPendingShopModal();
+}
+
+// Offline orders ko `orders` array mein merge karo (UI ke liye)
+function mergeOfflineOrders() {
+  if (offlineOrdersQueue.length === 0) return;
+  // Jo Firebase se aa chuke hain, unko hata do
+  var stillPending = [];
+  for (var i = 0; i < offlineOrdersQueue.length; i++) {
+    var off = offlineOrdersQueue[i];
+    var foundOnFirebase = false;
+    for (var j = 0; j < orders.length; j++) {
+      // Match by createdAt (kyunki id toh offline mein local_ hoga)
+      if (orders[j].createdAt === off.createdAt && orders[j].shopId == off.shopId) {
+        foundOnFirebase = true;
+        break;
+      }
+    }
+    if (!foundOnFirebase) {
+      off._offlinePending = true;
+      stillPending.push(off);
+    }
+  }
+  offlineOrdersQueue = stillPending;
+
+  // Ab offline orders ko orders array mein add karo (agar pehle se nahi)
+  for (var i = 0; i < offlineOrdersQueue.length; i++) {
+    var off = offlineOrdersQueue[i];
+    var exists = false;
+    for (var j = 0; j < orders.length; j++) {
+      if (orders[j].id === off.id) { exists = true; break; }
+    }
+    if (!exists) orders.push(off);
+  }
+}
+
+function syncOfflineQueue() {
+  // Jab internet aaye, Firebase khud queue bhej dega
+  // Bas UI update kar do
+  refreshAllViews();
 }
 
 function loadAllData(callback) {
@@ -1085,6 +1133,7 @@ function doLogout() {
     }
   }
   snapshotListeners = {};
+  offlineOrdersQueue = [];
   isLoggedIn = false; currentUser = null;
   localStorage.setItem('isLoggedIn', 'false');
   localStorage.removeItem('currentUser');
@@ -1291,6 +1340,7 @@ function showPage(pageId, btn) {
   }
 
   if (pageId === 'dashboard') {
+    mergeOfflineOrders();
     renderDashboard();
     applyDashboardLayout();
   }
@@ -1299,9 +1349,10 @@ function showPage(pageId, btn) {
   if (pageId === 'orders') {
     var dEl = document.getElementById('ordersDate');
     if (dEl && !dEl.value) dEl.value = todayStr();
+    mergeOfflineOrders();
     renderOrdersPage();
   }
-  if (pageId === 'delivery') renderDelivery();
+  if (pageId === 'delivery') { mergeOfflineOrders(); renderDelivery(); }
   if (pageId === 'history') {
     renderHistory();
     populateSalesFilters();
@@ -1404,9 +1455,11 @@ function saveUser(btn) {
         saveToFirebase('users', users[i].id, users[i]);
       }
     }
-    if (btn) enableButton(btn);
-    showToast('✅ User save ho gaya!', 'success');
-    resetUserForm(); renderUsers();
+    setTimeout(function() {
+      if (btn) enableButton(btn);
+      showToast('✅ User save ho gaya!', 'success');
+      resetUserForm(); renderUsers();
+    }, 300);
     return;
   }
 
@@ -1586,12 +1639,18 @@ function renderPendingShopkeeperList() {
   for (var k = 0; k < shopIds.length; k++) {
     var sid = shopIds[k];
     var shopName = 'Unknown';
+    var hasOffline = false;
     for (var i = 0; i < shopkeepers.length; i++) {
       if (shopkeepers[i].id == sid) shopName = shopkeepers[i].name;
     }
+    // Check karo kya is shop ka koi order offline pending hai
+    for (var i = 0; i < orders.length; i++) {
+      if (orders[i].shopId == sid && orders[i]._offlinePending) { hasOffline = true; break; }
+    }
     var count = grouped[sid];
     var summaryText = getShopOrderSummaryText(sid);
-    html += '<div class="pending-shop-name" onclick="openPendingShopModal(\'' + sid + '\')">' +
+    var offlineClass = hasOffline ? ' offline-pending' : '';
+    html += '<div class="pending-shop-name' + offlineClass + '" onclick="openPendingShopModal(\'' + sid + '\')">' +
       '<div class="psn-info">' +
         '<span class="name-text"><i class="fa fa-store shop-icon"></i> ' + shopName + '</span>' +
         (summaryText ? '<span class="psn-summary">📦 ' + summaryText + '</span>' : '') +
@@ -1779,15 +1838,15 @@ function deliverSelectedItems(btn) {
     });
   }
 
-  if (btn) enableButton(btn);
-  cleanupRouteAfterDelivery();
-  refreshPendingShopModal();
-
-  if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
-    sendMultiDeliveredWhatsApp(deliveredItemsForWa, shop);
-  }
-
-  showToast('✅ Delivered mark ho gaya!', 'success');
+  setTimeout(function() {
+    if (btn) enableButton(btn);
+    cleanupRouteAfterDelivery();
+    refreshPendingShopModal();
+    if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
+      sendMultiDeliveredWhatsApp(deliveredItemsForWa, shop);
+    }
+    showToast('✅ Delivered mark ho gaya!', 'success');
+  }, 300);
 }
 
 function closePendingShopModal() {
@@ -1825,6 +1884,8 @@ function saveShopkeeper(btn) {
 
   if (btn) disableButton(btn, 'Saving...');
 
+  var wasOffline = !isOnline;
+
   if (id) {
     for (var i = 0; i < shopkeepers.length; i++) {
       if (shopkeepers[i].id == id) {
@@ -1834,10 +1895,16 @@ function saveShopkeeper(btn) {
         saveToFirebase('shopkeepers', shopkeepers[i].id, shopkeepers[i]);
       }
     }
-    if (btn) enableButton(btn);
-    resetShopForm(); renderShopkeepers();
-    populateSalesFilters();
-    showToast('✅ Shopkeeper save!', 'success');
+    setTimeout(function() {
+      if (btn) enableButton(btn);
+      resetShopForm(); renderShopkeepers();
+      populateSalesFilters();
+      if (wasOffline) {
+        showToast('📴 Offline — shopkeeper local save. Internet par sync hoga.', 'warning', 4000);
+      } else {
+        showToast('✅ Shopkeeper save!', 'success');
+      }
+    }, 300);
     return;
   }
 
@@ -1848,14 +1915,20 @@ function saveShopkeeper(btn) {
       if (btn) enableButton(btn);
       resetShopForm(); renderShopkeepers();
       populateSalesFilters();
-      showToast('✅ Shopkeeper save!', 'success');
+      if (wasOffline) {
+        showToast('📴 Offline — shopkeeper local save. Internet par sync hoga.', 'warning', 4000);
+      } else {
+        showToast('✅ Shopkeeper save!', 'success');
+      }
     }).catch(function(e) {
       if (btn) enableButton(btn);
-      if (!isOnline) {
-        showToast('📴 Offline — shopkeeper local save. Internet par sync hoga.', 'warning', 4000);
+      // Offline mein bhi success maano (Firebase queue mein daal chuka)
+      if (wasOffline) {
         resetShopForm(); renderShopkeepers();
+        populateSalesFilters();
+        showToast('📴 Offline — shopkeeper local save. Internet par sync hoga.', 'warning', 4000);
       } else {
-        showToast('❌ Save nahi ho saka: ' + e.message, 'error', 4000);
+        showToast('❌ Save nahi ho saka: ' + (e.message || 'Unknown'), 'error', 4000);
       }
     });
   } else {
@@ -2028,6 +2101,8 @@ function saveRoute(btn) {
 
   if (btn) disableButton(btn, 'Saving...');
 
+  var wasOffline = !isOnline;
+
   var currentRouteId = id || null;
   for (var r = 0; r < routes.length; r++) {
     var route = routes[r];
@@ -2069,10 +2144,16 @@ function saveRoute(btn) {
         saveToFirebase('routes', routes[i].id, routes[i]);
       }
     }
-    if (btn) enableButton(btn);
-    showToast('✅ Route update ho gaya!', 'success');
-    resetRouteForm(); renderRoutes();
-    showPage('dashboard');
+    setTimeout(function() {
+      if (btn) enableButton(btn);
+      if (wasOffline) {
+        showToast('📴 Offline — route local save. Internet par sync hoga.', 'warning', 4000);
+      } else {
+        showToast('✅ Route update ho gaya!', 'success');
+      }
+      resetRouteForm(); renderRoutes();
+      showPage('dashboard');
+    }, 300);
     return;
   }
 
@@ -2087,17 +2168,21 @@ function saveRoute(btn) {
       newRoute.id = ref.id;
       routes.push(newRoute);
       if (btn) enableButton(btn);
-      showToast('✅ Route ban gaya: ' + name, 'success');
+      if (wasOffline) {
+        showToast('📴 Offline — route local save. Internet par sync hoga.', 'warning', 4000);
+      } else {
+        showToast('✅ Route ban gaya: ' + name, 'success');
+      }
       resetRouteForm(); renderRoutes();
       showPage('dashboard');
     }).catch(function(e) {
       if (btn) enableButton(btn);
-      if (!isOnline) {
-        showToast('📴 Offline — route local save. Internet par sync hoga.', 'warning', 4000);
+      if (wasOffline) {
         resetRouteForm();
         showPage('dashboard');
+        showToast('📴 Offline — route local save. Internet par sync hoga.', 'warning', 4000);
       } else {
-        showToast('❌ Save nahi ho saka: ' + e.message, 'error', 4000);
+        showToast('❌ Save nahi ho saka: ' + (e.message || 'Unknown'), 'error', 4000);
       }
     });
   } else {
@@ -2618,7 +2703,6 @@ function prepareOrderForm() {
   showNewOrderStep(1);
   var notesEl = document.getElementById('orderNotes');
   if (notesEl) notesEl.value = '';
-  // Reset save button
   var saveBtn = document.getElementById('saveOrderBtn');
   if (saveBtn) enableButton(saveBtn);
 }
@@ -2802,7 +2886,7 @@ function removeAddedProduct(idx) {
   renderProductPickerGrid();
 }
 
-// ✅ NAYA saveMultiOrder — no duplicate, offline-safe
+// ✅ FIXED saveMultiOrder — Offline mein turant UI update, koi wait nahi
 function saveMultiOrder(btn) {
   if (!can('newOrder')) { showToast('Permission nahi hai', 'error'); return; }
   if (isSavingOrder) { showToast('Order save ho raha hai... intezaar karein', 'warning'); return; }
@@ -2834,43 +2918,74 @@ function saveMultiOrder(btn) {
   var shop = getShopById(shopId);
   var wasOffline = !isOnline;
 
-  // Firebase par bhejo — chahe online ho ya offline, Firebase khud handle karega
-  db.collection('orders').add(newOrder).then(function(ref) {
-    // ✅ Success
+  // ✅ Turant local order ID do (UI ke liye)
+  newOrder.id = 'local_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  newOrder._offlinePending = wasOffline;
+
+  // ✅ Firebase par bhejo — yeh Firebase khud queue karega
+  db.collection('orders').add({
+    shopId: newOrder.shopId,
+    items: newOrder.items,
+    totalKg: newOrder.totalKg,
+    date: newOrder.date,
+    notes: newOrder.notes,
+    status: newOrder.status,
+    createdBy: newOrder.createdBy,
+    createdAt: newOrder.createdAt
+  }).then(function(ref) {
     newOrder.id = ref.id;
+    newOrder._offlinePending = false;
+    console.log('✅ Order Firebase par:', ref.id);
+  }).catch(function(e) {
+    console.log('Order add error (offline queue mein):', e);
+  });
+
+  // ✅ TURANT UI update karo (chahe offline ho ya online)
+  // Local queue mein daalo (jab tak Firebase data nahi deta)
+  if (wasOffline) {
+    offlineOrdersQueue.push(newOrder);
+  } else {
+    // Online — chhota sa delay, taake Firebase confirm kar de
+    // Lekin UI turant update ho jaye
+    offlineOrdersQueue.push(newOrder);
+    // 3 second baad clear (kyunki Firebase se aana chahiye)
+    setTimeout(function() {
+      // Remove from queue if it's now on Firebase
+      var stillThere = [];
+      for (var i = 0; i < offlineOrdersQueue.length; i++) {
+        if (offlineOrdersQueue[i].id === newOrder.id && newOrder._offlinePending === false) {
+          // Already Firebase par, hata do
+        } else {
+          stillThere.push(offlineOrdersQueue[i]);
+        }
+      }
+      offlineOrdersQueue = stillThere;
+      mergeOfflineOrders();
+      refreshAllViews();
+    }, 2500);
+  }
+
+  // UI ko turant update karo
+  setTimeout(function() {
+    // Merge offline orders into view
+    mergeOfflineOrders();
+
     isSavingOrder = false;
     if (btn) enableButton(btn);
 
-    // Toast
     if (wasOffline) {
       showToast('📴 Offline — order local save ho gaya. Internet aane par automatic sync hoga.', 'warning', 4000);
     } else {
       showToast('✅ Order save ho gaya!', 'success');
     }
 
-    // Page change
     prepareOrderForm();
     showPage('dashboard');
 
-    // WhatsApp — sirf online par
     if (!wasOffline && shop && shop.mobile) {
       sendOrderWhatsApp(newOrder, shop);
     }
-  }).catch(function(e) {
-    // ❌ Error (bahut kam hota hai offline mein — Firebase khud queue karta hai)
-    console.log('Order save error:', e);
-    isSavingOrder = false;
-    if (btn) enableButton(btn);
-
-    // Offline mein Firebase ke add() ne bhi queue mein daala hai, to user ko batao
-    if (!isOnline || String(e).indexOf('offline') !== -1) {
-      showToast('📴 Offline — order local save ho gaya. Internet aane par automatic sync hoga.', 'warning', 4000);
-      prepareOrderForm();
-      showPage('dashboard');
-    } else {
-      showToast('❌ Order save nahi ho saka: ' + (e.message || 'Unknown error'), 'error', 5000);
-    }
-  });
+  }, 200);
 }
 
 // ================== ORDERS PAGE ==================
@@ -2953,7 +3068,8 @@ function renderOrdersPage() {
           '</div>' + action + '</div>';
       }
     }
-    html += '<div class="shop-group"><div class="shop-group-head">' +
+    var offlineClass = sOrders[0]._offlinePending ? ' offline-pending' : '';
+    html += '<div class="shop-group' + offlineClass + '"><div class="shop-group-head">' +
       '<div><h4><i class="fa fa-store"></i> ' + shopName + '</h4>' +
       '<p><i class="fa fa-map-marker-alt"></i> ' + shopAddress + ' • <i class="fa fa-phone"></i> ' + shopMobile + '</p></div>' +
       '<span class="shop-group-total">' + totalKgText(shopKg) + '</span></div>' + linesHtml + '</div>';
@@ -3294,7 +3410,8 @@ function renderDelivery() {
           '</div>' + action + '</div>';
       }
     }
-    html += '<div class="shop-group"><div class="shop-group-head">' +
+    var offlineClass = sOrders[0]._offlinePending ? ' offline-pending' : '';
+    html += '<div class="shop-group' + offlineClass + '"><div class="shop-group-head">' +
       '<div><h4><i class="fa fa-store"></i> ' + shopName + '</h4>' +
       '<p><i class="fa fa-phone"></i> ' + shopMobile + '</p></div>' +
       '<span class="shop-group-total">' + totalKgText(totalKg) + '</span></div>' + linesHtml + '</div>';
@@ -3368,6 +3485,7 @@ function renderSalesReport() {
   for (var i = 0; i < orders.length; i++) {
     var o = orders[i];
     if (o.status !== 'Delivered') continue;
+    if (o._offlinePending) continue;
     if (fromDate && o.date < fromDate) continue;
     if (toDate && o.date > toDate) continue;
     if (shopFilter !== 'all' && o.shopId != shopFilter) continue;
@@ -3472,6 +3590,7 @@ function openSalesProductDetail(productName) {
   for (var i = 0; i < orders.length; i++) {
     var o = orders[i];
     if (o.status !== 'Delivered') continue;
+    if (o._offlinePending) continue;
     if (fromDate && o.date < fromDate) continue;
     if (toDate && o.date > toDate) continue;
     for (var j = 0; j < o.items.length; j++) {
@@ -3521,6 +3640,7 @@ function openSalesShopDetail(shopId) {
   for (var i = 0; i < orders.length; i++) {
     var o = orders[i];
     if (o.status !== 'Delivered') continue;
+    if (o._offlinePending) continue;
     if (o.shopId != shopId) continue;
     if (fromDate && o.date < fromDate) continue;
     if (toDate && o.date > toDate) continue;
@@ -3570,6 +3690,7 @@ function renderHistory() {
   for (var i = 0; i < orders.length; i++) {
     var o = orders[i];
     if (o.status !== 'Delivered') continue;
+    if (o._offlinePending) continue;
     if (dateFilter && o.date !== dateFilter) continue;
     if (search) {
       var shopName = '';
