@@ -12,6 +12,12 @@ var db = null;
 var firebaseReady = false;
 var firebaseLoaded = false;
 
+// Offline / sync state
+var isOnline = navigator.onLine;
+var pendingChangesCount = 0;
+var snapshotListeners = {};
+var firstLoadDone = false;
+
 function initFirebase(callback) {
   if (firebaseLoaded) { if (callback) callback(); return; }
   firebaseLoaded = true;
@@ -24,10 +30,25 @@ function initFirebase(callback) {
       try {
         firebase.initializeApp(firebaseConfig);
         db = firebase.firestore();
-        firebaseReady = true;
-        console.log('Firebase ready');
-      } catch (e) { console.log('Firebase error:', e); }
-      if (callback) callback();
+
+        // ✅ Offline persistence enable
+        db.enablePersistence({ synchronizeTabs: true }).then(function() {
+          console.log('✅ Offline persistence enabled');
+          firebaseReady = true;
+          if (callback) callback();
+        }).catch(function(err) {
+          if (err.code === 'failed-precondition') {
+            console.log('⚠️ Multiple tabs open — persistence sirf ek tab mein');
+          } else if (err.code === 'unimplemented') {
+            console.log('⚠️ Browser persistence support nahi karta');
+          }
+          firebaseReady = true;
+          if (callback) callback();
+        });
+      } catch (e) {
+        console.log('Firebase error:', e);
+        if (callback) callback();
+      }
     };
     document.head.appendChild(script2);
   };
@@ -83,90 +104,295 @@ var DEFAULT_DASHBOARD = [
   { key: 'routes', label: 'Aaj Ke Routes', show: true, size: 100, view: 'list' }
 ];
 
-// ================== FIREBASE SYNC ==================
-function loadAllData(callback) {
-  if (!firebaseReady) { if (callback) callback(); return; }
-  var pending = 6;
-  function done() { pending--; if (pending === 0 && callback) callback(); }
+// ================== ONLINE / OFFLINE DETECTION ==================
+function updateOnlineStatus() {
+  isOnline = navigator.onLine;
+  updateSyncStatusIndicator();
+  updateOfflineBanner();
+  updatePendingBanner();
+  updateSettingsSyncStatus();
+}
 
-  db.collection('shopkeepers').get().then(function(snap) {
-    shopkeepers = [];
-    snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; shopkeepers.push(d); });
-    console.log('Shopkeepers:', shopkeepers.length);
-    done();
-  }).catch(function(e) { console.log(e); done(); });
+window.addEventListener('online', function() {
+  isOnline = true;
+  console.log('🌐 Online — syncing...');
+  updateOnlineStatus();
+  var titleEl = document.getElementById('topbarTitle');
+  if (titleEl) {
+    var oldTitle = titleEl.textContent;
+    titleEl.textContent = '🌐 Online — Sync ho raha...';
+    setTimeout(function() { titleEl.textContent = oldTitle; }, 2000);
+  }
+});
 
-  db.collection('orders').get().then(function(snap) {
-    orders = [];
-    snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; orders.push(d); });
-    console.log('Orders:', orders.length);
-    done();
-  }).catch(function(e) { console.log(e); done(); });
+window.addEventListener('offline', function() {
+  isOnline = false;
+  console.log('📴 Offline');
+  updateOnlineStatus();
+});
 
-  db.collection('settings').doc('products').get().then(function(doc) {
-    if (doc.exists) products = doc.data().list || products;
-    done();
-  }).catch(function(e) { done(); });
-
-  db.collection('settings').doc('business').get().then(function(doc) {
-    if (doc.exists) {
-      var d = doc.data();
-      if (d.bizName) settings.bizName = d.bizName;
+function updateOfflineBanner() {
+  var banner = document.getElementById('offlineBanner');
+  if (!banner) return;
+  if (!isOnline) {
+    banner.style.display = 'block';
+    var txt = document.getElementById('offlineBannerText');
+    if (txt) {
+      txt.textContent = 'Internet band hai — sab kuch local save ho raha hai. Internet aane par automatic sync hoga.';
     }
-    done();
-  }).catch(function(e) { done(); });
+  } else {
+    banner.style.display = 'none';
+  }
+}
 
-  db.collection('users').get().then(function(snap) {
-    users = [];
-    snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; users.push(d); });
-    done();
-  }).catch(function(e) { done(); });
+function updatePendingBanner() {
+  var banner = document.getElementById('pendingBanner');
+  if (!banner) return;
+  if (pendingChangesCount > 0 && isOnline) {
+    banner.style.display = 'block';
+    var title = document.getElementById('pendingBannerTitle');
+    var txt = document.getElementById('pendingBannerText');
+    if (title) title.textContent = '⏳ ' + pendingChangesCount + ' change' + (pendingChangesCount > 1 ? 's' : '') + ' pending';
+    if (txt) txt.textContent = 'Sync ho raha hai... kuch der mein ho jayega';
+  } else if (pendingChangesCount > 0 && !isOnline) {
+    banner.style.display = 'block';
+    var title = document.getElementById('pendingBannerTitle');
+    var txt = document.getElementById('pendingBannerText');
+    if (title) title.textContent = '⏳ ' + pendingChangesCount + ' change' + (pendingChangesCount > 1 ? 's' : '') + ' pending';
+    if (txt) txt.textContent = 'Internet aane par automatic sync hoga';
+  } else {
+    banner.style.display = 'none';
+  }
+}
 
-  db.collection('routes').get().then(function(snap) {
-    routes = [];
-    snap.forEach(function(doc) {
-      var d = doc.data();
-      d.id = doc.id;
-      if (!d.items || !Array.isArray(d.items)) {
-        d.items = [];
-        if (d.shopIds && Array.isArray(d.shopIds)) {
-          var today = todayStr();
-          for (var i = 0; i < d.shopIds.length; i++) {
-            var sid = d.shopIds[i];
-            var added = {};
-            for (var j = 0; j < orders.length; j++) {
-              var o = orders[j];
-              if (o.shopId != sid) continue;
-              if (o.date !== today) continue;
-              if (o.status !== 'Pending' && o.status !== 'Partial') continue;
-              for (var k = 0; k < o.items.length; k++) {
-                var p = o.items[k].product;
-                if (!added[p]) {
-                  d.items.push({ shopId: sid, product: p });
-                  added[p] = true;
+function updateSyncStatusIndicator() {
+  var indicator = document.getElementById('syncStatusIndicator');
+  if (!indicator) return;
+  var icon = indicator.querySelector('i');
+  indicator.className = 'sync-status';
+  if (!isOnline) {
+    indicator.classList.add('offline');
+    indicator.title = 'Offline — Internet band hai';
+  } else if (pendingChangesCount > 0) {
+    indicator.classList.add('pending');
+    indicator.title = pendingChangesCount + ' changes pending';
+  } else {
+    indicator.classList.add('online');
+    indicator.title = 'Online — Sab sync';
+  }
+}
+
+function updateSettingsSyncStatus() {
+  var statusText = document.getElementById('syncStatusText');
+  var pendingText = document.getElementById('pendingChangesText');
+  if (statusText) {
+    if (!isOnline) {
+      statusText.textContent = '🔴 Offline — Internet band hai';
+      statusText.style.color = '#dc2626';
+    } else if (pendingChangesCount > 0) {
+      statusText.textContent = '🟡 Syncing — ' + pendingChangesCount + ' changes pending';
+      statusText.style.color = '#f59e0b';
+    } else {
+      statusText.textContent = '🟢 Online — Sab sync ho gaya';
+      statusText.style.color = '#16a34a';
+    }
+  }
+  if (pendingText) {
+    if (pendingChangesCount > 0) {
+      pendingText.style.display = 'block';
+      pendingText.textContent = '⏳ ' + pendingChangesCount + ' changes Firebase par bhejne hain';
+    } else {
+      pendingText.style.display = 'none';
+    }
+  }
+}
+
+// ================== FIREBASE SYNC (Real-time + Offline) ==================
+function setupRealtimeListeners() {
+  if (!firebaseReady) return;
+
+  // Shopkeepers
+  if (!snapshotListeners.shopkeepers) {
+    snapshotListeners.shopkeepers = db.collection('shopkeepers').onSnapshot(function(snap) {
+      shopkeepers = [];
+      snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; shopkeepers.push(d); });
+      console.log('🔄 Shopkeepers updated:', shopkeepers.length);
+      refreshAllViews();
+    }, function(err) {
+      console.log('Shopkeepers listener error:', err);
+    });
+  }
+
+  // Orders
+  if (!snapshotListeners.orders) {
+    snapshotListeners.orders = db.collection('orders').onSnapshot(function(snap) {
+      orders = [];
+      snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; orders.push(d); });
+      console.log('🔄 Orders updated:', orders.length);
+      refreshAllViews();
+    }, function(err) {
+      console.log('Orders listener error:', err);
+    });
+  }
+
+  // Products
+  if (!snapshotListeners.products) {
+    snapshotListeners.products = db.collection('settings').doc('products').onSnapshot(function(doc) {
+      if (doc.exists) products = doc.data().list || products;
+      console.log('🔄 Products updated');
+      refreshAllViews();
+    }, function(err) {
+      console.log('Products listener error:', err);
+    });
+  }
+
+  // Business settings
+  if (!snapshotListeners.business) {
+    snapshotListeners.business = db.collection('settings').doc('business').onSnapshot(function(doc) {
+      if (doc.exists) {
+        var d = doc.data();
+        if (d.bizName) settings.bizName = d.bizName;
+      }
+      applySettings();
+    }, function(err) {
+      console.log('Business listener error:', err);
+    });
+  }
+
+  // Users
+  if (!snapshotListeners.users) {
+    snapshotListeners.users = db.collection('users').onSnapshot(function(snap) {
+      users = [];
+      snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; users.push(d); });
+      console.log('🔄 Users updated:', users.length);
+      if (currentUser) {
+        for (var i = 0; i < users.length; i++) {
+          if (users[i].id === currentUser.id) {
+            currentUser = users[i];
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            break;
+          }
+        }
+      }
+      if (isAdmin()) renderUsers();
+    }, function(err) {
+      console.log('Users listener error:', err);
+    });
+  }
+
+  // Routes
+  if (!snapshotListeners.routes) {
+    snapshotListeners.routes = db.collection('routes').onSnapshot(function(snap) {
+      routes = [];
+      snap.forEach(function(doc) {
+        var d = doc.data();
+        d.id = doc.id;
+        if (!d.items || !Array.isArray(d.items)) {
+          d.items = [];
+          if (d.shopIds && Array.isArray(d.shopIds)) {
+            var today = todayStr();
+            for (var i = 0; i < d.shopIds.length; i++) {
+              var sid = d.shopIds[i];
+              var added = {};
+              for (var j = 0; j < orders.length; j++) {
+                var o = orders[j];
+                if (o.shopId != sid) continue;
+                if (o.date !== today) continue;
+                if (o.status !== 'Pending' && o.status !== 'Partial') continue;
+                for (var k = 0; k < o.items.length; k++) {
+                  var p = o.items[k].product;
+                  if (!added[p]) {
+                    d.items.push({ shopId: sid, product: p });
+                    added[p] = true;
+                  }
                 }
               }
             }
+            saveToFirebase('routes', d.id, d);
           }
-          saveToFirebase('routes', d.id, d);
+          d.shopIds = undefined;
         }
-        d.shopIds = undefined;
-      }
-      routes.push(d);
+        routes.push(d);
+      });
+      console.log('🔄 Routes updated:', routes.length);
+      refreshAllViews();
+    }, function(err) {
+      console.log('Routes listener error:', err);
     });
-    console.log('Routes:', routes.length);
-    done();
-  }).catch(function(e) { console.log(e); done(); });
+  }
+
+  firstLoadDone = true;
+}
+
+function refreshAllViews() {
+  // Sirf active page update karo, ya agar user login hai
+  if (!currentUser) return;
+  renderDashboard();
+  renderShopkeepers();
+  renderRoutes();
+  renderHistory();
+  renderRouteShopPicker();
+  applyDashboardLayout();
+  renderHiddenMenuList();
+  populateSalesFilters();
+
+  var ordPage = document.getElementById('orders');
+  if (ordPage && ordPage.classList.contains('active')) renderOrdersPage();
+  var delPage = document.getElementById('delivery');
+  if (delPage && delPage.classList.contains('active')) renderDelivery();
+  var pm = document.getElementById('pendingShopModal');
+  if (pm && pm.classList.contains('active')) refreshPendingShopModal();
+}
+
+function loadAllData(callback) {
+  // Real-time listeners setup karo (ek baar)
+  setupRealtimeListeners();
+  // Thodi der baad callback
+  setTimeout(function() { if (callback) callback(); }, 800);
 }
 
 function saveToFirebase(collection, id, data) {
   if (!firebaseReady) return;
-  db.collection(collection).doc(String(id)).set(data).catch(function(e) { console.log(e); });
+  pendingChangesCount++;
+  updateSyncStatusIndicator();
+  updatePendingBanner();
+  updateSettingsSyncStatus();
+
+  db.collection(collection).doc(String(id)).set(data).then(function() {
+    pendingChangesCount = Math.max(0, pendingChangesCount - 1);
+    updateSyncStatusIndicator();
+    updatePendingBanner();
+    updateSettingsSyncStatus();
+  }).catch(function(e) {
+    console.log('Save error (offline?):', e);
+    pendingChangesCount = Math.max(0, pendingChangesCount - 1);
+    updateSyncStatusIndicator();
+    updatePendingBanner();
+    updateSettingsSyncStatus();
+  });
 }
+
 function deleteFromFirebase(collection, id) {
   if (!firebaseReady) return;
-  db.collection(collection).doc(String(id)).delete().catch(function(e) { console.log(e); });
+  pendingChangesCount++;
+  updateSyncStatusIndicator();
+  updatePendingBanner();
+  updateSettingsSyncStatus();
+
+  db.collection(collection).doc(String(id)).delete().then(function() {
+    pendingChangesCount = Math.max(0, pendingChangesCount - 1);
+    updateSyncStatusIndicator();
+    updatePendingBanner();
+    updateSettingsSyncStatus();
+  }).catch(function(e) {
+    console.log('Delete error:', e);
+    pendingChangesCount = Math.max(0, pendingChangesCount - 1);
+    updateSyncStatusIndicator();
+    updatePendingBanner();
+    updateSettingsSyncStatus();
+  });
 }
+
 function saveSettingsFirebase() {
   if (!firebaseReady) return;
   saveToFirebase('settings', 'products', { list: products });
@@ -610,42 +836,31 @@ function autoShiftPendingOrders() {
 }
 
 // ================== NAVIGATION HELPERS (BACK + HOME) ==================
-// Back button: New Order page par steps peeche peeche, baaki pages se Dashboard
 function goBack() {
   var activePage = document.querySelector('.page.active');
   if (!activePage) return;
   var pageId = activePage.id;
-
-  // Dashboard par kuch nahi kare
   if (pageId === 'dashboard') return;
 
-  // New Order page — step-by-step back
   if (pageId === 'neworder') {
     var step3 = document.getElementById('quantityStep');
     var step2 = document.getElementById('productPickerStep');
-
-    // Agar Quantity step par hain → Products step
     if (step3 && step3.style.display === 'block') {
       cancelQty();
       return;
     }
-    // Agar Products step par hain → Shopkeeper picker (products clear)
     if (step2 && step2.style.display === 'block') {
       changeShopkeeper();
       return;
     }
-    // Warna (Shopkeeper picker) → Dashboard
     showPage('dashboard');
     return;
   }
-
-  // Baaki saare pages → Dashboard
   showPage('dashboard');
 }
 
-// Home button: hamesha seedha Dashboard
 function goHome() {
-  var activePage = document.querySelector('.page.active');
+  var activePage = document.querySelector('.page');
   if (activePage && activePage.id === 'dashboard') return;
   showPage('dashboard');
 }
@@ -785,6 +1000,7 @@ function doSignup() {
   if (pass.length < 4) { err.textContent = 'Password kam az kam 4 characters'; return; }
   if (pass !== pass2) { err.textContent = 'Password match nahi'; return; }
   if (!firebaseReady) { err.textContent = 'Firebase load nahi hua.'; return; }
+  if (!isOnline) { err.textContent = 'Account banane ke liye internet zaroori hai'; return; }
   err.textContent = 'Account bana rahe hain...';
   db.collection('users').where('user', '==', user).get().then(function(snap) {
     if (!snap.empty) { err.textContent = 'Ye username pehle se mojood hai'; return; }
@@ -832,7 +1048,18 @@ function doLogin() {
     if (!currentUser.pin) {
       setTimeout(function() { promptPinSetup(); }, 500);
     }
-  }).catch(function(e) { err.textContent = 'Error: ' + e.message; });
+  }).catch(function(e) {
+    // Offline login check — cached user
+    var cachedUser = JSON.parse(localStorage.getItem('currentUser'));
+    if (cachedUser && cachedUser.user === user && cachedUser.pass === pass) {
+      currentUser = cachedUser;
+      isLoggedIn = true;
+      localStorage.setItem('isLoggedIn', 'true');
+      showApp();
+      return;
+    }
+    err.textContent = 'Login nahi ho saka. Internet check karein.';
+  });
 }
 
 function showSignup() {
@@ -849,11 +1076,20 @@ function hideSignup() {
 }
 function doLogout() {
   if (!confirm('Logout karna hai?')) return;
+  // Listeners band karo
+  for (var key in snapshotListeners) {
+    if (snapshotListeners[key]) {
+      try { snapshotListeners[key](); } catch (e) {}
+    }
+  }
+  snapshotListeners = {};
   isLoggedIn = false; currentUser = null;
   localStorage.setItem('isLoggedIn', 'false');
   localStorage.removeItem('currentUser');
   document.getElementById('appWrapper').style.display = 'none';
   document.getElementById('pinSetupBanner').style.display = 'none';
+  document.getElementById('offlineBanner').style.display = 'none';
+  document.getElementById('pendingBanner').style.display = 'none';
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
@@ -893,44 +1129,27 @@ function showApp() {
   renderHiddenMenuList();
   populateSalesFilters();
   if (isAdmin()) renderUsers();
+  updateOnlineStatus();
 }
 
 // ================== MANUAL SYNC ==================
 function manualSync() {
   if (!firebaseReady) { alert('Firebase load nahi hua. Page refresh karein.'); return; }
+  if (!isOnline) { alert('Internet nahi hai. Internet aane par automatic sync hoga.'); return; }
   var btn = document.getElementById('syncBtn');
   var icon = document.getElementById('syncIcon');
   if (icon) icon.className = 'fa fa-sync-alt fa-spin';
   if (btn) btn.disabled = true;
-  loadAllData(function() {
-    autoShiftPendingOrders();
-    if (currentUser) {
-      for (var i = 0; i < users.length; i++) {
-        if (users[i].id === currentUser.id) {
-          currentUser = users[i];
-          localStorage.setItem('currentUser', JSON.stringify(currentUser));
-          break;
-        }
-      }
+  // Listeners ko refresh karo
+  for (var key in snapshotListeners) {
+    if (snapshotListeners[key]) {
+      try { snapshotListeners[key](); } catch (e) {}
     }
-    loadLayouts();
-    renderSidebarNav();
-    renderDashboard();
-    renderShopkeepers();
-    renderRoutes();
-    renderHistory();
-    renderSettings();
-    renderRouteShopPicker();
-    renderPinSettings();
-    applyDashboardLayout();
-    renderHiddenMenuList();
-    populateSalesFilters();
-    if (isAdmin()) renderUsers();
-    if (can('newOrder')) prepareOrderForm();
-    var ordPage = document.getElementById('orders');
-    if (ordPage && ordPage.classList.contains('active')) renderOrdersPage();
-    var delPage = document.getElementById('delivery');
-    if (delPage && delPage.classList.contains('active')) renderDelivery();
+  }
+  snapshotListeners = {};
+  setTimeout(function() {
+    setupRealtimeListeners();
+    autoShiftPendingOrders();
     if (icon) icon.className = 'fa fa-sync-alt';
     if (btn) btn.disabled = false;
     var titleEl = document.getElementById('topbarTitle');
@@ -939,7 +1158,7 @@ function manualSync() {
       titleEl.textContent = '✓ Sync ho gaya!';
       setTimeout(function() { titleEl.textContent = oldTitle; }, 1500);
     }
-  });
+  }, 600);
 }
 
 // ================== SIDEBAR ==================
@@ -1092,7 +1311,7 @@ function showPage(pageId, btn) {
     populateSalesFilters();
     renderSalesReport();
   }
-  if (pageId === 'settings') { renderSettings(); renderPinSettings(); renderHiddenMenuList(); }
+  if (pageId === 'settings') { renderSettings(); renderPinSettings(); renderHiddenMenuList(); updateSettingsSyncStatus(); }
   if (pageId === 'users') renderUsers();
   if (pageId === 'routes') { renderRoutes(); renderRouteShopPicker(); }
   window.scrollTo(0, 0);
@@ -1122,6 +1341,7 @@ function renderSettings() {
   var nameEl = document.getElementById('setBizName');
   if (nameEl) nameEl.value = settings.bizName;
   renderProductsList();
+  updateSettingsSyncStatus();
 }
 function renderProductsList() {
   var list = document.getElementById('productsList');
@@ -1545,7 +1765,6 @@ function deliverSelectedItems() {
   }
 
   cleanupRouteAfterDelivery();
-  renderOrdersPage(); renderDashboard(); renderDelivery(); renderHistory();
   refreshPendingShopModal();
 
   if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
@@ -1594,7 +1813,7 @@ function saveShopkeeper() {
         saveToFirebase('shopkeepers', shopkeepers[i].id, shopkeepers[i]);
       }
     }
-    resetShopForm(); renderShopkeepers(); renderDashboard(); renderShopPickerGrid(); renderRouteShopPicker();
+    resetShopForm(); renderShopkeepers();
     populateSalesFilters();
     alert('Shopkeeper save!'); return;
   }
@@ -1603,7 +1822,7 @@ function saveShopkeeper() {
     db.collection('shopkeepers').add(newShop).then(function(ref) {
       newShop.id = ref.id;
       shopkeepers.push(newShop);
-      resetShopForm(); renderShopkeepers(); renderDashboard(); renderShopPickerGrid(); renderRouteShopPicker();
+      resetShopForm(); renderShopkeepers();
       populateSalesFilters();
       alert('Shopkeeper save!');
     }).catch(function(e) { alert('Error: ' + e.message); });
@@ -1639,7 +1858,7 @@ function deleteShopkeeper(id) {
     else deleteFromFirebase('shopkeepers', shopkeepers[i].id);
   }
   shopkeepers = newList;
-  renderShopkeepers(); renderDashboard(); renderShopPickerGrid(); renderRouteShopPicker();
+  renderShopkeepers();
   populateSalesFilters();
 }
 function renderShopkeepers() {
@@ -1813,7 +2032,7 @@ function saveRoute() {
       }
     }
     alert('Route update ho gaya!');
-    resetRouteForm(); renderRoutes(); renderDashboardRoutes();
+    resetRouteForm(); renderRoutes();
     showPage('dashboard');
     return;
   }
@@ -1829,7 +2048,7 @@ function saveRoute() {
       newRoute.id = ref.id;
       routes.push(newRoute);
       alert('Route ban gaya: ' + name);
-      resetRouteForm(); renderRoutes(); renderDashboardRoutes();
+      resetRouteForm(); renderRoutes();
       showPage('dashboard');
     }).catch(function(e) { alert('Error: ' + e.message); });
   }
@@ -1873,7 +2092,7 @@ function deleteRoute(id) {
     else deleteFromFirebase('routes', routes[i].id);
   }
   routes = newList;
-  renderRoutes(); renderDashboardRoutes();
+  renderRoutes();
   updateRouteNameField();
 }
 
@@ -2254,7 +2473,6 @@ function closeRouteModal() {
   document.getElementById('routeModal').classList.remove('active');
 }
 
-// Route Detail Modal se ek shopkeeper ke saare route-products deliver karo
 function deliverRouteShop(routeId, shopId) {
   if (!can('deliver')) { alert('Permission nahi hai'); return; }
 
@@ -2329,8 +2547,6 @@ function deliverRouteShop(routeId, shopId) {
 
   cleanupRouteAfterDelivery();
   closeRouteModal();
-  renderOrdersPage(); renderDashboard(); renderDelivery(); renderHistory();
-  renderRoutes(); renderDashboardRoutes();
 
   if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
     sendMultiDeliveredWhatsApp(deliveredItemsForWa, shop);
@@ -2554,25 +2770,35 @@ function saveMultiOrder() {
       newOrder.id = ref.id;
       orders.push(newOrder);
       prepareOrderForm();
-      renderDashboard();
-      renderRouteShopPicker();
       showPage('dashboard');
       var shop = getShopById(shopId);
       if (shop && shop.mobile) {
         sendOrderWhatsApp(newOrder, shop);
       }
-    }).catch(function(e) { alert('Error: ' + e.message); });
+      if (!isOnline) {
+        var titleEl = document.getElementById('topbarTitle');
+        if (titleEl) {
+          var oldTitle = titleEl.textContent;
+          titleEl.textContent = '📴 Order local save — Internet par sync hoga';
+          setTimeout(function() { titleEl.textContent = oldTitle; }, 2500);
+        }
+      }
+    }).catch(function(e) {
+      console.log('Order save (offline queue):', e);
+      // Offline mein bhi UI update
+      newOrder.id = 'local_' + Date.now();
+      orders.push(newOrder);
+      prepareOrderForm();
+      showPage('dashboard');
+    });
+  } else {
+    // Firebase ready nahi — local
+    newOrder.id = 'local_' + Date.now();
+    orders.push(newOrder);
+    prepareOrderForm();
+    showPage('dashboard');
+    alert('Order local save ho gaya. Internet aane par automatic sync hoga.');
   }
-}
-function newOrderBack() {
-  var step3 = document.getElementById('quantityStep');
-  if (step3 && step3.style.display === 'block') { cancelQty(); return; }
-  var step2 = document.getElementById('productPickerStep');
-  if (step2 && step2.style.display === 'block') {
-    changeShopkeeper();
-    return;
-  }
-  showPage('dashboard');
 }
 
 // ================== ORDERS PAGE ==================
@@ -2728,7 +2954,6 @@ function confirmDelivery() {
   saveToFirebase('orders', order.id, order);
   closeDeliverModal();
   cleanupRouteAfterDelivery();
-  renderOrdersPage(); renderDashboard(); renderDelivery(); renderHistory();
   var pm = document.getElementById('pendingShopModal');
   if (pm && pm.classList.contains('active')) refreshPendingShopModal();
   var shop = getShopById(order.shopId);
@@ -2753,7 +2978,6 @@ function markAllDelivered() {
   saveToFirebase('orders', order.id, order);
   closeDeliverModal();
   cleanupRouteAfterDelivery();
-  renderOrdersPage(); renderDashboard(); renderDelivery(); renderHistory();
   var pm = document.getElementById('pendingShopModal');
   if (pm && pm.classList.contains('active')) refreshPendingShopModal();
   var shop = getShopById(order.shopId);
@@ -2887,7 +3111,6 @@ function confirmCombinedDelivery() {
   }
   closeDeliverModal();
   cleanupRouteAfterDelivery();
-  renderOrdersPage(); renderDashboard(); renderDelivery(); renderHistory();
   var pm = document.getElementById('pendingShopModal');
   if (pm && pm.classList.contains('active')) refreshPendingShopModal();
   if (waShop && waShop.mobile && waOrder) {
@@ -2923,7 +3146,6 @@ function markAllCombinedDelivered() {
   }
   closeDeliverModal();
   cleanupRouteAfterDelivery();
-  renderOrdersPage(); renderDashboard(); renderDelivery(); renderHistory();
   var pm = document.getElementById('pendingShopModal');
   if (pm && pm.classList.contains('active')) refreshPendingShopModal();
   if (waShop && waShop.mobile && waOrder) {
@@ -3345,36 +3567,49 @@ function closeModal() {
 // ================== INIT ==================
 window.addEventListener('load', function() {
   applySettings();
-  initFirebase(function() {
-    loadAllData(function() {
-      autoShiftPendingOrders();
+  updateOnlineStatus();
 
+  initFirebase(function() {
+    // Pehli baar data load + listeners setup
+    setTimeout(function() {
+      // User login check
       var loggedIn = localStorage.getItem('isLoggedIn') === 'true';
       var cachedUser = JSON.parse(localStorage.getItem('currentUser'));
 
       if (loggedIn && cachedUser) {
-        var found = null;
-        for (var i = 0; i < users.length; i++) {
-          if (users[i].id === cachedUser.id) { found = users[i]; break; }
+        // Cached user se turant login (offline bhi chalega)
+        currentUser = cachedUser;
+        isLoggedIn = true;
+        showApp();
+
+        // Firebase se user verify (agar online)
+        if (firebaseReady && isOnline && cachedUser.id) {
+          db.collection('users').doc(String(cachedUser.id)).get().then(function(doc) {
+            if (doc.exists) {
+              var d = doc.data();
+              d.id = doc.id;
+              currentUser = d;
+              localStorage.setItem('currentUser', JSON.stringify(d));
+              loadLayouts();
+              renderSidebarNav();
+              applySettings();
+              if (isAdmin()) renderUsers();
+            }
+          }).catch(function(e) { console.log(e); });
         }
-        if (found) {
-          currentUser = found;
-          isLoggedIn = true;
-          if (currentUser.pin && String(currentUser.pin).length === 4) {
-            showPinScreen();
-            return;
-          } else {
-            showApp();
-            return;
-          }
-        }
+        return;
       }
-      isLoggedIn = false;
-      localStorage.setItem('isLoggedIn', 'false');
-      localStorage.removeItem('currentUser');
+
+      // Login screen dikhao
       document.getElementById('loginScreen').style.display = 'flex';
       document.getElementById('appWrapper').style.display = 'none';
       document.getElementById('pinScreen').style.display = 'none';
-    });
+
+      // Agar user ne pehle login kiya tha aur ab cached hai
+      if (cachedUser && cachedUser.pin && String(cachedUser.pin).length === 4) {
+        currentUser = cachedUser;
+        showPinScreen();
+      }
+    }, 500);
   });
 });
