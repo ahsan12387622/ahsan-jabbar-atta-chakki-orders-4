@@ -1,7 +1,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, sans-serif; }
 body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
 
-/* ============ TOAST NOTIFICATION ============ */
+/* ============ TOAST ============ */
 .toast {
   position: fixed;
   top: 80px;
@@ -49,8 +49,7 @@ body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
 
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-/* ============ OFFLINE PENDING ORDER (Yellow Border) ============ */
-/* Jab order offline laga ho — yellow border dikhe */
+/* ============ OFFLINE PENDING ============ */
 .item.offline-pending,
 .shop-group.offline-pending {
   border-left-color: #f59e0b !important;
@@ -138,7 +137,7 @@ body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
 .icon-btn:hover { background: rgba(255,255,255,0.2); }
 .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* ============ SYNC STATUS INDICATOR ============ */
+/* ============ SYNC STATUS ============ */
 .sync-status { display: inline-flex; align-items: center; justify-content: center; margin-left: 6px; font-size: 10px; width: 14px; height: 14px; position: relative; }
 .sync-status i { font-size: 10px; }
 .sync-status.online { color: #4ade80; }
@@ -170,7 +169,7 @@ body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
 .nav-btn.active { background: #16a34a; color: #fff; font-weight: 600; }
 .nav-btn i { width: 22px; text-align: center; }
 
-/* ============ MENU EDIT PANEL ============ */
+/* ============ MENU EDIT ============ */
 .menu-edit-panel { padding: 12px 15px 15px; background: #0f172a; margin: 10px; border-radius: 12px; border: 2px solid #6366f1; }
 .menu-edit-panel h4 { color: #c7d2fe; font-size: 14px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
 .menu-edit-hint { color: #94a3b8; font-size: 11px; margin-bottom: 12px; }
@@ -185,7 +184,7 @@ body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
 .menu-edit-item .me-arrows button:hover { background: #16a34a; }
 .menu-edit-item .me-arrows button:disabled { opacity: 0.3; cursor: not-allowed; }
 
-/* ============ HIDDEN MENU LIST ============ */
+/* ============ HIDDEN MENU ============ */
 .hidden-menu-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .hidden-menu-link { display: flex; align-items: center; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #6366f1; border-radius: 10px; padding: 12px 16px; cursor: pointer; font-weight: 600; color: #334155; text-decoration: none; transition: 0.2s; }
 .hidden-menu-link:hover { background: #eef2ff; border-color: #6366f1; }
@@ -199,7 +198,7 @@ body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
 .page-header h1 { font-size: 24px; margin-bottom: 4px; margin-top: 8px; }
 .page-sub { color: #64748b; font-size: 14px; }
 
-/* ============ PAGE NAV BUTTONS (BACK + HOME) ============ */
+/* ============ PAGE NAV ============ */
 .page-nav-btns { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .page-nav-btns .back-btn { background: #f1f5f9; border: none; padding: 10px 18px; border-radius: 10px; font-size: 14px; font-weight: 600; color: #334155; cursor: pointer; margin: 0; display: inline-flex; align-items: center; gap: 6px; transition: 0.2s; }
 .page-nav-btns .back-btn:hover { background: #e2e8f0; color: #1e293b; }
@@ -215,7 +214,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .edit-dash-btn { background: #6366f1; color: #fff; border: none; font-weight: 600; padding: 10px 16px; font-size: 13px; border-radius: 10px; cursor: pointer; margin: 0; }
 .edit-dash-btn:hover { background: #4f46e5; }
 
-/* ============ DASHBOARD EDIT PANEL ============ */
+/* ============ DASHBOARD EDIT ============ */
 .dash-edit-panel { background: linear-gradient(135deg, #eef2ff, #e0e7ff); border: 2px solid #6366f1; border-radius: 14px; padding: 16px; margin-bottom: 18px; }
 .dash-edit-panel h4 { color: #3730a3; font-size: 15px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
 
@@ -348,9 +347,78 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 /* ============ MODAL ============ */
 .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,23,42,0.6); z-index: 200; justify-content: center; align-items: center; padding: 15px; }
 .modal.active { display: flex; }
-.modal-content { background: #fff; border-radius: 14px; padding: 20px; max-width: 500px; width: 100%; max-height: 85vh; overflow-y: auto; }
+.modal-content { background: #fff; border-radius: 14px; padding: 22px 20px; max-width: 500px; width: 100%; max-height: 85vh; overflow-y: auto; }
+.modal-content h2 { margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .close { float: right; font-size: 28px; cursor: pointer; color: #94a3b8; line-height: 1; }
 
+/* ============ DELIVER CONFIRM MODAL ============ */
+#deliverConfirmModal .modal-content {
+  border-top: 5px solid #16a34a;
+}
+#deliverConfirmBody .confirm-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px dashed #e2e8f0;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+#deliverConfirmBody .confirm-item:last-child {
+  border-bottom: none;
+}
+#deliverConfirmBody .confirm-item .ci-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #e0e7ff, #ede9fe);
+  color: #3730a3;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  border: 1px solid #c7d2fe;
+}
+#deliverConfirmBody .confirm-item .ci-qty {
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(135deg, #dcfce7, #d1fae5);
+  color: #15803d;
+  font-weight: 800;
+  font-size: 14px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  border: 1px solid #86efac;
+}
+
+/* ============ WHATSAPP SHARE MODAL ============ */
+#whatsappShareModal .modal-content {
+  border-top: 5px solid #25D366;
+}
+#whatsappShareModal h2 i {
+  color: #25D366;
+}
+#whatsappShareMessage {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  padding: 14px;
+  margin: 12px 0;
+  white-space: pre-wrap;
+  font-size: 13px;
+  color: #166534;
+  max-height: 300px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+#whatsappShareModal button.btn.primary {
+  background: #25D366;
+}
+#whatsappShareModal button.btn.primary:hover {
+  background: #1da851;
+}
+
+/* ============ DELIVER ROW ============ */
 .deliver-row { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
 .deliver-row-sub { color: #64748b; font-size: 13px; margin-bottom: 10px; }
 .deliver-qty-row { display: grid; grid-template-columns: 1fr; gap: 10px; }
@@ -396,7 +464,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   max-width: 100%;
 }
 
-/* ============ SHOP PICKER GRID ============ */
+/* ============ SHOP PICKER ============ */
 .shop-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .shop-picker-card { background: #fff; border: 2px solid #e2e8f0; border-radius: 14px; padding: 16px 12px; cursor: pointer; text-align: center; transition: 0.2s; }
 .shop-picker-card:hover { border-color: #16a34a; background: #f0fdf4; }
@@ -405,7 +473,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .shop-picker-card .sp-mobile { font-size: 12px; color: #64748b; }
 .shop-picker-card .sp-address { font-size: 11px; color: #94a3b8; margin-top: 6px; }
 
-/* ============ PRODUCT PICKER GRID ============ */
+/* ============ PRODUCT PICKER ============ */
 .product-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .product-picker-card { background: #fff; border: 2px solid #e2e8f0; border-radius: 14px; padding: 20px 12px; cursor: pointer; text-align: center; transition: 0.2s; position: relative; }
 .product-picker-card:hover { border-color: #16a34a; background: #f0fdf4; }
@@ -427,7 +495,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .selected-shop-info .ss-name { font-size: 17px; font-weight: 700; color: #166534; }
 .selected-shop-info .ss-mobile { font-size: 13px; color: #15803d; margin-top: 2px; }
 
-/* ============ QUANTITY STEP ============ */
+/* ============ QUANTITY ============ */
 .qty-product-head { text-align: center; background: #fff; border-radius: 14px; padding: 24px 20px; margin-bottom: 18px; border-top: 5px solid #f59e0b; }
 .qty-product-head .qp-icon { width: 70px; height: 70px; background: linear-gradient(135deg, #f59e0b, #d97706); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 32px; color: #fff; margin: 0 auto 12px; }
 .qty-product-head .qp-name { font-size: 22px; font-weight: 800; color: #1e293b; }
@@ -455,7 +523,6 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .route-stat.green { background: #dcfce7; color: #166534; }
 .route-actions { display: flex; gap: 6px; margin-top: 10px; }
 
-/* Route shop picker — with products */
 .route-shop-picker { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
 
 .route-shop-block {
@@ -587,7 +654,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .route-total-breakdown { background: rgba(255, 255, 255, 0.15); border-radius: 10px; padding: 12px 14px; margin-top: 8px; }
 .route-total-breakdown .route-breakdown-line { padding: 5px 0; }
 
-/* ============ PRODUCT & QUANTITY COLOR SCHEME ============ */
+/* ============ PRODUCT & QUANTITY COLORS ============ */
 .shop-order-line { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #e2e8f0; flex-wrap: wrap; gap: 8px; }
 .shop-order-line:last-child { border-bottom: none; }
 .shop-order-line .product-name { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #e0e7ff, #ede9fe); color: #3730a3; font-weight: 700; font-size: 14px; padding: 6px 14px; border-radius: 20px; border: 1px solid #c7d2fe; }
@@ -616,7 +683,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .product-picker-card .pp-name { background: linear-gradient(135deg, #e0e7ff, #ede9fe); color: #3730a3; padding: 5px 14px; border-radius: 14px; border: 1px solid #c7d2fe; display: inline-block; font-weight: 700; font-size: 13px; }
 .product-picker-card.added .pp-name { background: linear-gradient(135deg, #dcfce7, #d1fae5); color: #15803d; border-color: #86efac; }
 
-/* ============ PENDING SHOP MODAL — CHECKBOX & DELIVER ============ */
+/* ============ PENDING SHOP MODAL ============ */
 .product-line.selectable-line { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid #f1f5f9; flex-wrap: wrap; }
 .deliver-checkbox { display: flex; align-items: center; cursor: pointer; flex-shrink: 0; position: relative; }
 .deliver-checkbox input[type="checkbox"] { width: 22px; height: 22px; accent-color: #16a34a; cursor: pointer; margin: 0; }
@@ -629,7 +696,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .history-tab:hover { background: rgba(255,255,255,0.5); }
 .history-tab.active { background: #fff; color: #16a34a; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
 
-/* ============ SALES REPORT ============ */
+/* ============ SALES ============ */
 .sales-list { display: flex; flex-direction: column; gap: 10px; }
 .sales-row { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #6366f1; border-radius: 10px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; cursor: pointer; transition: 0.2s; }
 .sales-row:hover { background: #eef2ff; border-color: #6366f1; }
@@ -645,6 +712,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .sales-detail-row .sd-items { font-size: 13px; color: #334155; flex: 1; min-width: 150px; }
 .sales-detail-row .sd-total { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 700; }
 
+/* ============ ROUTE SHOP DELIVER BTN ============ */
 .route-detail-shop-head { gap: 10px; }
 .route-detail-shop-head h4 { font-size: 16px; margin-bottom: 0; }
 .route-shop-deliver-btn {
@@ -659,7 +727,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   margin: 0 !important;
 }
 
-/* Mobile */
+/* ============ MOBILE ============ */
 @media (max-width: 500px) {
   .toast { top: 70px; font-size: 13px; padding: 12px 18px; max-width: 94%; }
   .product-line-info .p-name,
@@ -671,4 +739,6 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   .route-shop-products { padding-left: 12px; }
   .offline-banner-text p,
   .pending-banner-text p { font-size: 11px; }
+  .modal-content { padding: 18px 16px; }
+  #whatsappShareMessage { font-size: 12px; padding: 12px; }
 }
