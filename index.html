@@ -593,6 +593,30 @@
   </div>
 </div>
 
+<!-- ✅ NAYA: Deliver Confirm Modal -->
+<div id="deliverConfirmModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeDeliverConfirmModal()">&times;</span>
+    <h2><i class="fa fa-check-circle" style="color:#16a34a;"></i> Deliver Confirm Karein</h2>
+    <p class="hint" id="deliverConfirmShopName" style="font-weight:700;color:#166534;font-size:15px;margin-top:8px;"></p>
+    <div id="deliverConfirmBody" style="margin:14px 0;"></div>
+    <button class="btn primary big" onclick="confirmDeliverConfirmModal()"><i class="fa fa-check"></i> Haan, Deliver Karein</button>
+    <button class="btn big" onclick="closeDeliverConfirmModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
+<!-- ✅ NAYA: WhatsApp Share Modal -->
+<div id="whatsappShareModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeWhatsappShareModal()">&times;</span>
+    <h2><i class="fa-brands fa-whatsapp" style="color:#25D366;"></i> WhatsApp par Bhejein?</h2>
+    <p class="hint">Yeh message shopkeeper ko bheja jayega:</p>
+    <div id="whatsappShareMessage" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin:12px 0;white-space:pre-wrap;font-size:13px;color:#166534;max-height:300px;overflow-y:auto;"></div>
+    <button class="btn primary big" onclick="confirmWhatsappShare()"><i class="fa-brands fa-whatsapp"></i> Share on WhatsApp</button>
+    <button class="btn big" onclick="closeWhatsappShareModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
 <script src="script.js"></script>
 </body>
 </html>
