@@ -609,6 +609,20 @@ function autoShiftPendingOrders() {
   if (shifted > 0) console.log(shifted + ' pending orders shifted');
 }
 
+// ================== NAVIGATION HELPERS (BACK + HOME) ==================
+function goBack() {
+  // Browser history back — agar dashboard pe hain to kuch na kare
+  var activePage = document.querySelector('.page.active');
+  if (activePage && activePage.id === 'dashboard') return;
+  window.history.back();
+}
+
+function goHome() {
+  var activePage = document.querySelector('.page.active');
+  if (activePage && activePage.id === 'dashboard') return;
+  showPage('dashboard');
+}
+
 // ================== PIN SYSTEM ==================
 function showPinScreen() {
   document.getElementById('loginScreen').style.display = 'none';
@@ -2443,7 +2457,6 @@ function confirmQtyAdd() {
   var m = parseInt(document.getElementById('qtyMaund').value) || 0;
   var k = parseInt(document.getElementById('qtyKg').value) || 0;
   if (m === 0 && k === 0) { alert('Kam az kam maund ya kg daalein!'); return; }
-  if (k > 39) { alert('Kg 39 se zyada nahi ho sakta.'); return; }
   if (selectedEditIndex >= 0 && selectedEditIndex < currentOrderItems.length) {
     currentOrderItems[selectedEditIndex].maund = m;
     currentOrderItems[selectedEditIndex].kg = k;
