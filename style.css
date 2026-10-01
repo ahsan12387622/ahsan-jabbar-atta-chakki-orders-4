@@ -12,41 +12,20 @@ body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
   padding: 20px;
   z-index: 1000;
 }
-.splash-box {
-  text-align: center;
-  color: #fff;
-}
+.splash-box { text-align: center; color: #fff; }
 .splash-logo {
-  width: 90px;
-  height: 90px;
+  width: 90px; height: 90px;
   background: linear-gradient(135deg, #16a34a, #15803d);
   border-radius: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 42px;
-  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 42px; color: #fff;
   margin: 0 auto 20px;
   box-shadow: 0 10px 40px rgba(22,163,74,0.4);
   animation: splashPulse 1.5s ease-in-out infinite;
 }
-.splash-box h1 {
-  font-size: 26px;
-  font-weight: 800;
-  color: #4ade80;
-  margin-bottom: 20px;
-  letter-spacing: 0.5px;
-}
-.splash-loader {
-  font-size: 28px;
-  color: #4ade80;
-  margin-bottom: 10px;
-}
-.splash-text {
-  color: #94a3b8;
-  font-size: 14px;
-  font-weight: 500;
-}
+.splash-box h1 { font-size: 26px; font-weight: 800; color: #4ade80; margin-bottom: 20px; letter-spacing: 0.5px; }
+.splash-loader { font-size: 28px; color: #4ade80; margin-bottom: 10px; }
+.splash-text { color: #94a3b8; font-size: 14px; font-weight: 500; }
 
 @keyframes splashPulse {
   0%, 100% { transform: scale(1); box-shadow: 0 10px 40px rgba(22,163,74,0.4); }
@@ -56,49 +35,80 @@ body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
 /* ============ TOAST ============ */
 .toast {
   position: fixed;
-  top: 80px;
-  left: 50%;
+  top: 80px; left: 50%;
   transform: translateX(-50%) translateY(-20px);
-  background: #16a34a;
-  color: #fff;
-  padding: 14px 22px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 600;
+  background: #16a34a; color: #fff;
+  padding: 14px 22px; border-radius: 12px;
+  font-size: 14px; font-weight: 600;
   box-shadow: 0 6px 20px rgba(0,0,0,0.25);
   z-index: 500;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0; pointer-events: none;
   transition: opacity 0.3s, transform 0.3s;
-  max-width: 92%;
-  text-align: center;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: center;
+  max-width: 92%; text-align: center;
+  display: flex; align-items: center; gap: 8px; justify-content: center;
   line-height: 1.4;
 }
-.toast.show {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-  pointer-events: auto;
-}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
 .toast.success { background: linear-gradient(135deg, #16a34a, #15803d); }
 .toast.error { background: linear-gradient(135deg, #dc2626, #b91c1c); }
 .toast.info { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
 .toast.warning { background: linear-gradient(135deg, #f59e0b, #d97706); }
 .toast i { font-size: 16px; }
 
-.btn.loading {
-  opacity: 0.75;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-.btn.loading i.fa-spinner {
-  animation: spin 1s linear infinite;
-}
+.btn.loading { opacity: 0.75; cursor: not-allowed; pointer-events: none; }
+.btn.loading i.fa-spinner { animation: spin 1s linear infinite; }
 
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ============ USER INITIALS BADGE ============ */
+.user-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 6px rgba(99,102,241,0.4);
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+.user-badge.small {
+  width: 22px;
+  height: 22px;
+  font-size: 9px;
+}
+.user-badge.tiny {
+  width: 20px;
+  height: 20px;
+  font-size: 8px;
+}
+.user-badge.old {
+  background: linear-gradient(135deg, #94a3b8, #64748b);
+  box-shadow: 0 2px 6px rgba(100,116,139,0.3);
+}
+
+/* Shop group header mein user badge ke saath layout */
+.shop-group-head-with-user {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+.shop-group-head-info { flex: 1; min-width: 0; }
+
+/* Order item line mein user badge */
+.order-line-with-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
 /* ============ OFFLINE PENDING ============ */
 .item.offline-pending,
@@ -111,14 +121,10 @@ body { background: #f1f5f9; color: #1e293b; min-height: 100vh; }
 .shop-group.offline-pending::after {
   content: '⏳ Sync Pending';
   position: absolute;
-  top: 8px;
-  right: 8px;
-  background: #f59e0b;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 10px;
+  top: 8px; right: 8px;
+  background: #f59e0b; color: #fff;
+  font-size: 10px; font-weight: 700;
+  padding: 3px 8px; border-radius: 10px;
   letter-spacing: 0.3px;
 }
 .pending-shop-name.offline-pending {
@@ -319,18 +325,10 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .pill { background: #16a34a; color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; }
 
 /* ============ RESET DATA BOX ============ */
-#resetDataBox {
-  border-left: 4px solid #dc2626;
-}
-#resetDataBox h3 {
-  color: #dc2626;
-}
-#resetDataBox button.btn.primary {
-  background: #dc2626;
-}
-#resetDataBox button.btn.primary:hover {
-  background: #b91c1c;
-}
+#resetDataBox { border-left: 4px solid #dc2626; }
+#resetDataBox h3 { color: #dc2626; }
+#resetDataBox button.btn.primary { background: #dc2626; }
+#resetDataBox button.btn.primary:hover { background: #b91c1c; }
 
 /* ============ BUTTONS ============ */
 .btn { padding: 12px 20px; border: 1px solid #e2e8f0; background: #fff; border-radius: 10px; cursor: pointer; font-size: 14px; margin: 4px 4px 4px 0; color: #334155; font-weight: 500; }
@@ -419,16 +417,65 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 /* ============ DELIVER CONFIRM MODAL ============ */
 #deliverConfirmModal .modal-content { border-top: 5px solid #16a34a; }
 #deliverConfirmBody .confirm-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px dashed #e2e8f0;
-  gap: 10px;
-  flex-wrap: wrap;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 0; border-bottom: 1px dashed #e2e8f0;
+  gap: 10px; flex-wrap: wrap;
 }
 #deliverConfirmBody .confirm-item:last-child { border-bottom: none; }
 #deliverConfirmBody .confirm-item .ci-name {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: linear-gradient(135deg, #e0e7ff, #ede9fe);
+  color: #3730a3; font-weight: 700; font-size: 14px;
+  padding: 5px 12px; border-radius: 16px; border: 1px solid #c7d2fe;
+}
+#deliverConfirmBody .confirm-item .ci-qty {
+  display: inline-flex; align-items: center;
+  background: linear-gradient(135deg, #dcfce7, #d1fae5);
+  color: #15803d; font-weight: 800; font-size: 14px;
+  padding: 5px 12px; border-radius: 16px; border: 1px solid #86efac;
+}
+
+/* ============ RESET CONFIRM MODAL ============ */
+#resetConfirmModal .modal-content { border-top: 5px solid #dc2626; }
+#resetConfirmModal h2 { color: #dc2626; }
+#resetConfirmModal button.btn.primary { background: #dc2626; }
+#resetConfirmModal button.btn.primary:hover { background: #b91c1c; }
+
+/* ============ CANCEL ORDER MODAL ============ */
+#cancelOrderModal .modal-content { border-top: 5px solid #dc2626; }
+#cancelOrderModal h2 { color: #dc2626; }
+
+/* ============ EDIT ORDER MODAL ============ */
+#editOrderModal .modal-content { border-top: 5px solid #6366f1; }
+#editOrderModal h2 { color: #4f46e5; }
+
+/* ============ EDIT ITEM MODAL ============ */
+#editItemModal .modal-content { border-top: 5px solid #6366f1; }
+#editItemModal h2 { color: #4f46e5; }
+
+/* ============ EDIT ORDER — ITEM ROW ============ */
+.edit-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #6366f1;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.edit-item-row .eir-info {
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.edit-item-row .eir-name {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -440,7 +487,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   border-radius: 16px;
   border: 1px solid #c7d2fe;
 }
-#deliverConfirmBody .confirm-item .ci-qty {
+.edit-item-row .eir-qty {
   display: inline-flex;
   align-items: center;
   background: linear-gradient(135deg, #dcfce7, #d1fae5);
@@ -451,12 +498,37 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   border-radius: 16px;
   border: 1px solid #86efac;
 }
+.edit-item-row .eir-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.edit-item-row .eir-actions button {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  transition: 0.2s;
+}
+.edit-item-row .eir-actions button.btn-edit { color: #4f46e5; }
+.edit-item-row .eir-actions button.btn-edit:hover { background: #eef2ff; border-color: #6366f1; }
+.edit-item-row .eir-actions button.btn-del { color: #dc2626; }
+.edit-item-row .eir-actions button.btn-del:hover { background: #fee2e2; border-color: #dc2626; }
 
-/* ============ RESET CONFIRM MODAL ============ */
-#resetConfirmModal .modal-content { border-top: 5px solid #dc2626; }
-#resetConfirmModal h2 { color: #dc2626; }
-#resetConfirmModal button.btn.primary { background: #dc2626; }
-#resetConfirmModal button.btn.primary:hover { background: #b91c1c; }
+/* ============ WHATSAPP TABLE FORMAT ============ */
+.whatsapp-table {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
 
 /* ============ WHATSAPP SHARE MODAL ============ */
 #whatsappShareModal .modal-content { border-top: 5px solid #25D366; }
@@ -473,6 +545,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   max-height: 300px;
   overflow-y: auto;
   line-height: 1.5;
+  font-family: 'Courier New', monospace;
 }
 #whatsappShareModal button.btn.primary { background: #25D366; }
 #whatsappShareModal button.btn.primary:hover { background: #1da851; }
@@ -504,8 +577,8 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 }
 .pending-shop-name:hover { background: #fde68a; }
 .pending-shop-name .psn-info { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.pending-shop-name .name-text { display: flex; align-items: center; }
-.pending-shop-name i.shop-icon { color: #f59e0b; margin-right: 10px; font-size: 18px; }
+.pending-shop-name .name-text { display: flex; align-items: center; gap: 6px; }
+.pending-shop-name i.shop-icon { color: #f59e0b; margin-right: 6px; font-size: 18px; }
 .pending-shop-name i.arrow-icon { color: #b45309; font-size: 14px; margin-top: 4px; }
 .pending-shop-name .order-count { background: #f59e0b; color: #fff; font-size: 12px; padding: 3px 9px; border-radius: 12px; margin-right: 8px; font-weight: 700; margin-top: 2px; }
 
@@ -712,6 +785,33 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   margin: 0 !important;
 }
 
+/* ============ ORDER ACTION BUTTONS (Edit / Cancel / Delivered) ============ */
+.order-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.order-actions .btn {
+  margin: 0;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.btn-edit-order {
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+.btn-edit-order:hover { background: #e0e7ff; border-color: #6366f1; }
+.btn-cancel-order {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+.btn-cancel-order:hover { background: #fecaca; border-color: #dc2626; }
+
 /* ============ MOBILE ============ */
 @media (max-width: 500px) {
   .toast { top: 70px; font-size: 13px; padding: 12px 18px; max-width: 94%; }
@@ -728,4 +828,10 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   #whatsappShareMessage { font-size: 12px; padding: 12px; }
   .splash-logo { width: 70px; height: 70px; font-size: 34px; }
   .splash-box h1 { font-size: 22px; }
+  .order-actions .btn { padding: 6px 10px; font-size: 11px; }
+  .edit-item-row { padding: 10px 12px; }
+  .edit-item-row .eir-name,
+  .edit-item-row .eir-qty { font-size: 12px; padding: 4px 10px; }
+  .edit-item-row .eir-actions button { width: 30px; height: 30px; font-size: 12px; }
+  .user-badge { width: 22px; height: 22px; font-size: 9px; }
 }
