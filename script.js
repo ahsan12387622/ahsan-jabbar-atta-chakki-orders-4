@@ -63,7 +63,6 @@ function initFirebase(callback) {
   document.head.appendChild(script1);
 }
 
-// ================== DATA ==================
 var shopkeepers = [];
 var orders = [];
 var products = ['Aata', 'Besan', 'Chawal ka Atta'];
@@ -135,10 +134,6 @@ function getUserBadgeHtml(username, sizeClass) {
   var title = user ? getUserDisplayName(user) : username;
   return '<span class="user-badge ' + (sizeClass || '') + oldClass + '" title="' + title + '">' + initials + '</span>';
 }
-function getCurrentDateTimeText() {
-  var d = new Date();
-  return formatDateTimeObj(d);
-}
 function formatDateTimeObj(d) {
   var day = String(d.getDate()).padStart(2, '0');
   var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -151,6 +146,7 @@ function formatDateTimeObj(d) {
   var hoursStr = String(hours).padStart(2, '0');
   return day + ' ' + month + ' ' + year + ', ' + hoursStr + ':' + mins + ' ' + ampm;
 }
+function getCurrentDateTimeText() { return formatDateTimeObj(new Date()); }
 function getOrderDateTimeText(order) {
   if (order && order.createdAt) {
     try { return formatDateTimeObj(new Date(order.createdAt)); } catch (e) {}
@@ -738,7 +734,6 @@ function openWhatsappMultiDeliveredShareModal(items, shop) {
   if (modal) modal.classList.add('active');
 }
 
-// ✅ EDIT — ab asal order ki date/time bracket mein aayegi
 function openWhatsappEditShareModal(order, shop, oldItems, newItems) {
   if (!shop || !shop.mobile) return;
   var number = formatWaNumber(shop.mobile); if (!number) return;
@@ -746,33 +741,26 @@ function openWhatsappEditShareModal(order, shop, oldItems, newItems) {
 
   var tableLines = [];
   for (var i = 0; i < oldItems.length; i++) {
-    var oi = oldItems[i];
-    var found = false;
+    var oi = oldItems[i]; var found = false;
     for (var j = 0; j < newItems.length; j++) {
       if (newItems[j].product === oi.product) {
         var oldQty = qtyText(oi.maund, oi.kg);
         var newQty = qtyText(newItems[j].maund, newItems[j].kg);
-        if (oldQty === newQty) {
-          tableLines.push('• ' + oi.product + ' — ' + oldQty);
-        } else {
-          tableLines.push('❌ ' + oi.product + ' — ' + oldQty);
-          tableLines.push('✅ ' + oi.product + ' — ' + newQty);
-        }
+        if (oldQty === newQty) tableLines.push('• ' + oi.product + ' — ' + oldQty);
+        else { tableLines.push('❌ ' + oi.product + ' — ' + oldQty); tableLines.push('✅ ' + oi.product + ' — ' + newQty); }
         found = true; break;
       }
     }
     if (!found) tableLines.push('❌ ' + oi.product + ' — ' + qtyText(oi.maund, oi.kg));
   }
   for (var j = 0; j < newItems.length; j++) {
-    var nj = newItems[j];
-    var existsOld = false;
+    var nj = newItems[j]; var existsOld = false;
     for (var i = 0; i < oldItems.length; i++) { if (oldItems[i].product === nj.product) { existsOld = true; break; } }
     if (!existsOld) tableLines.push('✅ ' + nj.product + ' — ' + qtyText(nj.maund, nj.kg));
   }
 
   var tableText = tableLines.join('\n');
   var originalDateTime = getOrderDateTimeText(order);
-
   var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n' +
     '📅 ' + getCurrentDateTimeText() + '\n\n' +
     'Aap ne is tarikh (' + originalDateTime + ') ko yeh order diya tha, aur yeh ismein tabdeeli ki gayi hai:\n\n' +
@@ -787,14 +775,12 @@ function openWhatsappEditShareModal(order, shop, oldItems, newItems) {
   if (modal) modal.classList.add('active');
 }
 
-// ✅ CANCEL — ab asal order ki date/time bracket mein aayegi
 function openWhatsappCancelShareModal(order, shop) {
   if (!shop || !shop.mobile) return;
   var number = formatWaNumber(shop.mobile); if (!number) return;
   var bizName = settings.bizName || 'Atta Chakki';
   var itemsText = formatOrderItemsText(order.items);
   var originalDateTime = getOrderDateTimeText(order);
-
   var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n' +
     '📅 ' + getCurrentDateTimeText() + '\n\n' +
     'Aap ne is tarikh (' + originalDateTime + ') ko yeh order diya tha, aur yeh cancel ho gaya hai:\n\n' +
@@ -826,18 +812,15 @@ function cleanupRouteAfterDelivery() {
   var routesChanged = false;
   for (var r = routes.length - 1; r >= 0; r--) {
     var route = routes[r];
-    var items = (route.items || []).slice();
-    var newItems = [];
+    var items = (route.items || []).slice(); var newItems = [];
     for (var i = 0; i < items.length; i++) {
-      var it = items[i];
-      var stillPending = false;
+      var it = items[i]; var stillPending = false;
       for (var j = 0; j < orders.length; j++) {
         var o = orders[j];
         if (o.shopId != it.shopId) continue;
         if (o.status !== 'Pending' && o.status !== 'Partial') continue;
         for (var k = 0; k < o.items.length; k++) {
-          var oi = o.items[k];
-          if (oi.product !== it.product) continue;
+          var oi = o.items[k]; if (oi.product !== it.product) continue;
           var remM = (parseInt(oi.maund) || 0) - (parseInt(oi.deliveredMaund) || 0);
           var remK = (parseInt(oi.kg) || 0) - (parseInt(oi.deliveredKg) || 0);
           if (remM > 0 || remK > 0) { stillPending = true; break; }
@@ -1371,7 +1354,6 @@ function renderDashboard() {
   document.getElementById('todayOrders').textContent = orders.filter(function(o) { return o.date === today; }).length;
   document.getElementById('pendingOrders').textContent = orders.filter(function(o) { return o.status === 'Pending' || o.status === 'Partial'; }).length;
   document.getElementById('deliveredOrders').textContent = orders.filter(function(o) { return o.status === 'Delivered'; }).length;
-
   var todayPending = orders.filter(function(o) { return o.date === today && (o.status === 'Pending' || o.status === 'Partial'); });
   var totalKg = 0;
   for (var i = 0; i < todayPending.length; i++) {
@@ -1385,9 +1367,8 @@ function renderDashboard() {
   }
   document.getElementById('todayLoadBadge').textContent = totalKgText(totalKg);
   var list = document.getElementById('todayLoadList');
-  if (todayPending.length === 0) {
-    list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Aaj koi pending order nahi.</div>';
-  } else {
+  if (todayPending.length === 0) { list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Aaj koi pending order nahi.</div>'; }
+  else {
     var byProduct = {};
     for (var i = 0; i < todayPending.length; i++) {
       var o = todayPending[i];
@@ -2301,7 +2282,7 @@ function saveMultiOrder(btn) {
     if (btn) enableButton(btn);
     showToast(wasOffline ? '📴 Offline — order local save' : '✅ Order save ho gaya!', wasOffline ? 'warning' : 'success', 4000);
     prepareOrderForm(); showPage('dashboard');
-    if (!wasOffline && shop && shop.mobile) openWhatsappShareModal(newOrder, shop);
+    if (shop && shop.mobile) openWhatsappShareModal(newOrder, shop);
   }, 200);
 }
 
