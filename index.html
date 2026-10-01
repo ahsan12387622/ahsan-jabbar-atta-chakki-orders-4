@@ -189,11 +189,27 @@
       <div id="dashEditList"></div>
     </div>
 
+    <!-- NAYA: WhatsApp Queue Banner -->
+    <div id="dashboardQueueBanner" class="dashboard-queue-banner" style="display:none;" onclick="showPage('whatsappQueue')">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <i class="fa fa-paper-plane" style="font-size:24px;color:#2563eb;"></i>
+        <div>
+          <strong style="color:#1e40af;" id="dashboardQueueTitle">0 WhatsApp messages pending</strong>
+          <p style="font-size:12px;color:#3730a3;">Queue section mein jaakar share karein</p>
+        </div>
+      </div>
+      <i class="fa fa-arrow-right" style="color:#2563eb;"></i>
+    </div>
+
     <div id="sec-bigButtons" class="dash-section">
       <div class="big-buttons" id="bigButtonsWrap">
         <button class="big-btn new-order" onclick="showPage('neworder')"><i class="fa fa-plus-circle"></i><span>Naya Order</span><small>Order add karein</small></button>
         <button class="big-btn new-route" onclick="showPage('routes')"><i class="fa fa-route"></i><span>Delivery Route Add</span><small>Route banayein</small></button>
         <button class="big-btn all-orders" onclick="showPage('orders')"><i class="fa fa-truck"></i><span>Orders / Loading</span><small>Sab orders dekhein</small></button>
+        <!-- NAYA: Accounts Button -->
+        <button class="big-btn accounts-btn" onclick="showPage('accounts')"><i class="fa fa-wallet"></i><span>Accounts</span><small>Shopkeeper khata dekhein</small></button>
+        <!-- NAYA: Amount Pending Button -->
+        <button class="big-btn pending-amount-btn" onclick="showPage('pendingAmount')"><i class="fa fa-hourglass-half"></i><span>Amount Pending</span><small>Farzi customers ki baqi amount</small></button>
       </div>
     </div>
 
@@ -365,10 +381,139 @@
         <div class="form-group"><label>Mobile *</label><input type="text" id="shopMobile" placeholder="03001234567" /></div>
       </div>
       <div class="form-group"><label>Shop / Address</label><input type="text" id="shopAddress" placeholder="Address" /></div>
+      <!-- NAYA: Category Radio -->
+      <div class="form-group">
+        <label><i class="fa fa-tags"></i> Customer Ki Category *</label>
+        <label class="radio-item">
+          <input type="radio" name="shopCategory" value="regular" checked />
+          <span>🟢 Regular Customer (Khata / Account hoga)</span>
+        </label>
+        <label class="radio-item">
+          <input type="radio" name="shopCategory" value="farzi" />
+          <span>🔵 Farzi Customer (Khata nahi — sirf order)</span>
+        </label>
+      </div>
       <button class="btn primary" onclick="saveShopkeeper(this)" id="saveShopBtn"><i class="fa fa-save"></i> Save</button>
       <button class="btn" onclick="resetShopForm()">Cancel</button>
     </div>
+    <!-- NAYA: Filter Tabs -->
+    <div class="farzi-filter-tabs">
+      <button class="active" onclick="filterShopkeepers('all', this)">Sab</button>
+      <button onclick="filterShopkeepers('regular', this)">🟢 Regular</button>
+      <button onclick="filterShopkeepers('farzi', this)">🔵 Farzi</button>
+    </div>
     <div id="shopkeepersList" class="list"></div>
+  </section>
+
+  <!-- NAYA PAGE: Accounts -->
+  <section id="accounts" class="page">
+    <div class="page-header">
+      <div class="page-nav-btns">
+        <button class="btn back-btn" onclick="goBack()"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
+      <h1><i class="fa fa-wallet"></i> Accounts</h1>
+      <p class="page-sub">Shopkeepers ka khata dekhein aur wasooli karein</p>
+    </div>
+
+    <div class="accounts-total-card">
+      <div class="label"><i class="fa fa-arrow-down"></i> Maine Lene Hain (Total Udhaar)</div>
+      <div class="amount" id="accountsTotalAmount">Rs. 0</div>
+    </div>
+
+    <div class="box">
+      <h3><i class="fa fa-search"></i> Search Shopkeeper</h3>
+      <input type="text" id="accountsSearchInput" placeholder="Naam ya mobile se dhoondein..." oninput="renderAccounts()" style="width:100%;padding:13px 14px;border:1px solid #e2e8f0;border-radius:10px;font-size:15px;background:#f8fafc;" />
+    </div>
+
+    <div id="accountsList" class="list"></div>
+  </section>
+
+  <!-- NAYA PAGE: Account Detail -->
+  <section id="accountDetail" class="page">
+    <div class="page-header">
+      <div class="page-nav-btns">
+        <button class="btn back-btn" onclick="showPage('accounts')"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
+      <h1 id="accountDetailName">—</h1>
+      <p class="page-sub" id="accountDetailMobile">—</p>
+    </div>
+
+    <div class="accounts-total-card">
+      <div class="label">Total Khata (Baqi Udhaar)</div>
+      <div class="amount" id="accountDetailTotal">Rs. 0</div>
+    </div>
+
+    <div class="account-action-buttons">
+      <button class="btn primary big" onclick="openWasooliModal()"><i class="fa fa-money-bill-wave"></i> Wasooli Add Karein</button>
+    </div>
+
+    <div class="box">
+      <div class="box-head"><h2><i class="fa fa-list"></i> Daily Khata</h2></div>
+      <div id="accountDetailEntries"></div>
+    </div>
+  </section>
+
+  <!-- NAYA PAGE: Amount Pending -->
+  <section id="pendingAmount" class="page">
+    <div class="page-header">
+      <div class="page-nav-btns">
+        <button class="btn back-btn" onclick="goBack()"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
+      <h1><i class="fa fa-hourglass-half"></i> Amount Pending</h1>
+      <p class="page-sub">Farzi customers ki pending amount</p>
+    </div>
+
+    <div class="pending-amount-header">
+      <div>Total Pending Amount</div>
+      <div class="big-num" id="pendingAmountTotal">Rs. 0</div>
+    </div>
+
+    <div id="pendingAmountList" class="list"></div>
+  </section>
+
+  <!-- NAYA PAGE: Farzi Customer Detail -->
+  <section id="farziCustomerDetail" class="page">
+    <div class="page-header">
+      <div class="page-nav-btns">
+        <button class="btn back-btn" onclick="showPage('pendingAmount')"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
+      <h1 id="farziDetailName">—</h1>
+      <p class="page-sub" id="farziDetailMobile">—</p>
+    </div>
+
+    <div class="pending-amount-header">
+      <div>Total Pending</div>
+      <div class="big-num" id="farziDetailTotal">Rs. 0</div>
+    </div>
+
+    <div id="farziDetailOrders" class="list"></div>
+  </section>
+
+  <!-- NAYA PAGE: WhatsApp Queue -->
+  <section id="whatsappQueue" class="page">
+    <div class="page-header">
+      <div class="page-nav-btns">
+        <button class="btn back-btn" onclick="goBack()"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn home-btn" onclick="goHome()"><i class="fa fa-home"></i> Home</button>
+      </div>
+      <h1><i class="fa fa-paper-plane"></i> WhatsApp Queue</h1>
+      <p class="page-sub">Offline ke waqt save hue messages</p>
+    </div>
+
+    <div class="box">
+      <div class="box-head">
+        <h2><i class="fa fa-list"></i> Pending Messages</h2>
+        <span class="pill" id="queueCountBadge">0</span>
+      </div>
+      <button class="btn primary big" onclick="shareAllFromQueue()" id="shareAllQueueBtn" style="margin-bottom:10px;">
+        <i class="fa fa-share"></i> Sab Share Karein
+      </button>
+      <div id="queueList"></div>
+    </div>
   </section>
 
   <section id="delivery" class="page">
@@ -492,6 +637,7 @@
         <label class="perm-item"><input type="checkbox" id="permHistory" checked /><span><i class="fa fa-clock"></i> History</span></label>
         <label class="perm-item"><input type="checkbox" id="permSettings" /><span><i class="fa fa-gear"></i> Settings</span></label>
         <label class="perm-item"><input type="checkbox" id="permRoutes" checked /><span><i class="fa fa-route"></i> Routes</span></label>
+        <label class="perm-item"><input type="checkbox" id="permAccounts" checked /><span><i class="fa fa-wallet"></i> Accounts</span></label>
       </div>
       <button class="btn primary big" onclick="saveUser(this)" id="saveUserBtn"><i class="fa fa-save"></i> User Save Karein</button>
       <button class="btn big" onclick="resetUserForm()">Cancel</button>
@@ -532,6 +678,12 @@
         <div class="form-group" style="display:flex; align-items:flex-end;"><button class="btn primary" onclick="addProduct()" style="width:100%"><i class="fa fa-plus"></i> Add</button></div>
       </div>
       <div id="productsList" class="product-list"></div>
+    </div>
+    <!-- NAYA: WhatsApp Queue in Settings -->
+    <div class="box">
+      <h3><i class="fa fa-paper-plane"></i> WhatsApp Queue</h3>
+      <p class="hint" id="settingsQueueText">Koi pending message nahi</p>
+      <button class="btn primary" onclick="showPage('whatsappQueue')"><i class="fa fa-arrow-right"></i> Queue Kholen</button>
     </div>
     <div class="box">
       <h3><i class="fa fa-wifi"></i> Sync Status</h3>
@@ -657,7 +809,6 @@
   </div>
 </div>
 
-<!-- ✅ NAYA: Edit Order Modal -->
 <div id="editOrderModal" class="modal">
   <div class="modal-content">
     <span class="close" onclick="closeEditOrderModal()">&times;</span>
@@ -673,7 +824,6 @@
   </div>
 </div>
 
-<!-- ✅ NAYA: Edit Item Modal (product + quantity edit karne ke liye) -->
 <div id="editItemModal" class="modal">
   <div class="modal-content">
     <span class="close" onclick="closeEditItemModal()">&times;</span>
@@ -697,7 +847,6 @@
   </div>
 </div>
 
-<!-- ✅ NAYA: Cancel Order Confirm Modal -->
 <div id="cancelOrderModal" class="modal">
   <div class="modal-content">
     <span class="close" onclick="closeCancelOrderModal()">&times;</span>
@@ -706,6 +855,68 @@
     <div id="cancelOrderBody" style="margin:14px 0;"></div>
     <button class="btn primary big" onclick="confirmCancelOrder(this)" style="background:#dc2626;"><i class="fa fa-times"></i> Haan, Cancel Karein</button>
     <button class="btn big" onclick="closeCancelOrderModal()"><i class="fa fa-arrow-left"></i> Wapas</button>
+  </div>
+</div>
+
+<!-- NAYA MODAL: Amount Daalein -->
+<div id="amountModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeAmountModal()">&times;</span>
+    <h2><i class="fa fa-money-bill-wave" style="color:#16a34a;"></i> Order Ka Amount Daalein</h2>
+    <p class="hint">Har product ka amount alag alag likhein</p>
+    <div id="amountItemsList" style="margin:14px 0;"></div>
+    <div class="amount-total-box">
+      <span>Total Amount:</span>
+      <strong id="amountTotalText">Rs. 0</strong>
+    </div>
+    <button class="btn primary big" onclick="saveOrderWithAmount(this)"><i class="fa fa-save"></i> Save Order</button>
+    <button class="btn big" onclick="closeAmountModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
+<!-- NAYA MODAL: Wasooli -->
+<div id="wasooliModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeWasooliModal()">&times;</span>
+    <h2><i class="fa fa-money-bill-wave" style="color:#16a34a;"></i> Wasooli Add Karein</h2>
+    <p class="hint" id="wasooliShopName" style="font-weight:700;color:#166534;"></p>
+    <div class="form-group">
+      <label>Amount (Rs.)</label>
+      <input type="number" id="wasooliAmount" min="0" placeholder="0" style="font-size:20px;font-weight:700;text-align:center;" />
+    </div>
+    <div class="form-group">
+      <label>Note (Optional)</label>
+      <input type="text" id="wasooliNote" placeholder="Jaise: cash, bank transfer..." />
+    </div>
+    <button class="btn primary big" onclick="saveWasooli(this)"><i class="fa fa-save"></i> Save Wasooli</button>
+    <button class="btn big" onclick="closeWasooliModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
+<!-- NAYA MODAL: Farzi Deliver -->
+<div id="farziDeliverModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeFarziDeliverModal()">&times;</span>
+    <h2><i class="fa fa-money-bill-wave" style="color:#2563eb;"></i> Amount Kya Hua?</h2>
+    <p class="hint" id="farziDeliverShopName" style="font-weight:700;color:#1e40af;font-size:15px;margin-top:8px;"></p>
+    <div class="amount-total-box" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);">
+      <span>Order Amount:</span>
+      <strong id="farziDeliverAmount">Rs. 0</strong>
+    </div>
+    <button class="btn primary big" onclick="markFarziDelivered('paid', this)" style="background:linear-gradient(135deg,#16a34a,#15803d);"><i class="fa fa-check"></i> ✅ Amount De Diya</button>
+    <button class="btn primary big" onclick="markFarziDelivered('pending', this)" style="background:linear-gradient(135deg,#f59e0b,#d97706);"><i class="fa fa-clock"></i> ⏳ Pending Karein</button>
+    <button class="btn big" onclick="closeFarziDeliverModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
+<!-- NAYA MODAL: WhatsApp Queue Reminder -->
+<div id="whatsappQueueReminderModal" class="modal">
+  <div class="modal-content" style="border-top:5px solid #25D366;">
+    <h2><i class="fa fa-paper-plane" style="color:#25D366;"></i> WhatsApp Messages Pending</h2>
+    <p class="hint" id="queueReminderText" style="font-weight:600;color:#1e40af;font-size:15px;margin-top:10px;"></p>
+    <p class="hint" style="color:#64748b;font-size:13px;">Aap in messages ko WhatsApp par bhej sakte hain ya baad main queue section se bhej sakte hain</p>
+    <button class="btn primary big" onclick="shareAllFromQueue(this)" style="background:linear-gradient(135deg,#25D366,#1da851);"><i class="fa fa-share"></i> 📤 Abhi Share Karein</button>
+    <button class="btn big" onclick="closeQueueReminderModal()"><i class="fa fa-clock"></i> ⏰ Baad Main</button>
   </div>
 </div>
 
