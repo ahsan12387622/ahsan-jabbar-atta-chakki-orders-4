@@ -189,7 +189,6 @@
       <div id="dashEditList"></div>
     </div>
 
-    <!-- NAYA: WhatsApp Queue Banner -->
     <div id="dashboardQueueBanner" class="dashboard-queue-banner" style="display:none;" onclick="showPage('whatsappQueue')">
       <div style="display:flex;align-items:center;gap:12px;">
         <i class="fa fa-paper-plane" style="font-size:24px;color:#2563eb;"></i>
@@ -206,9 +205,7 @@
         <button class="big-btn new-order" onclick="showPage('neworder')"><i class="fa fa-plus-circle"></i><span>Naya Order</span><small>Order add karein</small></button>
         <button class="big-btn new-route" onclick="showPage('routes')"><i class="fa fa-route"></i><span>Delivery Route Add</span><small>Route banayein</small></button>
         <button class="big-btn all-orders" onclick="showPage('orders')"><i class="fa fa-truck"></i><span>Orders / Loading</span><small>Sab orders dekhein</small></button>
-        <!-- NAYA: Accounts Button -->
         <button class="big-btn accounts-btn" onclick="showPage('accounts')"><i class="fa fa-wallet"></i><span>Accounts</span><small>Shopkeeper khata dekhein</small></button>
-        <!-- NAYA: Amount Pending Button -->
         <button class="big-btn pending-amount-btn" onclick="showPage('pendingAmount')"><i class="fa fa-hourglass-half"></i><span>Amount Pending</span><small>Farzi customers ki baqi amount</small></button>
       </div>
     </div>
@@ -381,7 +378,6 @@
         <div class="form-group"><label>Mobile *</label><input type="text" id="shopMobile" placeholder="03001234567" /></div>
       </div>
       <div class="form-group"><label>Shop / Address</label><input type="text" id="shopAddress" placeholder="Address" /></div>
-      <!-- NAYA: Category Radio -->
       <div class="form-group">
         <label><i class="fa fa-tags"></i> Customer Ki Category *</label>
         <label class="radio-item">
@@ -396,7 +392,6 @@
       <button class="btn primary" onclick="saveShopkeeper(this)" id="saveShopBtn"><i class="fa fa-save"></i> Save</button>
       <button class="btn" onclick="resetShopForm()">Cancel</button>
     </div>
-    <!-- NAYA: Filter Tabs -->
     <div class="farzi-filter-tabs">
       <button class="active" onclick="filterShopkeepers('all', this)">Sab</button>
       <button onclick="filterShopkeepers('regular', this)">🟢 Regular</button>
@@ -405,7 +400,6 @@
     <div id="shopkeepersList" class="list"></div>
   </section>
 
-  <!-- NAYA PAGE: Accounts -->
   <section id="accounts" class="page">
     <div class="page-header">
       <div class="page-nav-btns">
@@ -429,7 +423,6 @@
     <div id="accountsList" class="list"></div>
   </section>
 
-  <!-- NAYA PAGE: Account Detail -->
   <section id="accountDetail" class="page">
     <div class="page-header">
       <div class="page-nav-btns">
@@ -455,7 +448,6 @@
     </div>
   </section>
 
-  <!-- NAYA PAGE: Amount Pending -->
   <section id="pendingAmount" class="page">
     <div class="page-header">
       <div class="page-nav-btns">
@@ -474,7 +466,6 @@
     <div id="pendingAmountList" class="list"></div>
   </section>
 
-  <!-- NAYA PAGE: Farzi Customer Detail -->
   <section id="farziCustomerDetail" class="page">
     <div class="page-header">
       <div class="page-nav-btns">
@@ -493,7 +484,6 @@
     <div id="farziDetailOrders" class="list"></div>
   </section>
 
-  <!-- NAYA PAGE: WhatsApp Queue -->
   <section id="whatsappQueue" class="page">
     <div class="page-header">
       <div class="page-nav-btns">
@@ -509,9 +499,6 @@
         <h2><i class="fa fa-list"></i> Pending Messages</h2>
         <span class="pill" id="queueCountBadge">0</span>
       </div>
-      <button class="btn primary big" onclick="shareAllFromQueue()" id="shareAllQueueBtn" style="margin-bottom:10px;">
-        <i class="fa fa-share"></i> Sab Share Karein
-      </button>
       <div id="queueList"></div>
     </div>
   </section>
@@ -679,7 +666,6 @@
       </div>
       <div id="productsList" class="product-list"></div>
     </div>
-    <!-- NAYA: WhatsApp Queue in Settings -->
     <div class="box">
       <h3><i class="fa fa-paper-plane"></i> WhatsApp Queue</h3>
       <p class="hint" id="settingsQueueText">Koi pending message nahi</p>
@@ -858,7 +844,6 @@
   </div>
 </div>
 
-<!-- NAYA MODAL: Amount Daalein -->
 <div id="amountModal" class="modal">
   <div class="modal-content">
     <span class="close" onclick="closeAmountModal()">&times;</span>
@@ -874,7 +859,6 @@
   </div>
 </div>
 
-<!-- NAYA MODAL: Wasooli -->
 <div id="wasooliModal" class="modal">
   <div class="modal-content">
     <span class="close" onclick="closeWasooliModal()">&times;</span>
@@ -893,7 +877,34 @@
   </div>
 </div>
 
-<!-- NAYA MODAL: Farzi Deliver -->
+<div id="editWasooliModal" class="modal">
+  <div class="modal-content" style="border-top:5px solid #6366f1;">
+    <span class="close" onclick="closeEditWasooliModal()">&times;</span>
+    <h2><i class="fa fa-edit" style="color:#6366f1;"></i> Wasooli Edit Karein</h2>
+    <div class="form-group">
+      <label>Amount (Rs.)</label>
+      <input type="number" id="editWasooliAmount" min="0" placeholder="0" style="font-size:20px;font-weight:700;text-align:center;" />
+    </div>
+    <div class="form-group">
+      <label>Note (Optional)</label>
+      <input type="text" id="editWasooliNote" placeholder="Note..." />
+    </div>
+    <button class="btn primary big" onclick="saveEditedWasooli(this)" style="background:linear-gradient(135deg,#6366f1,#4f46e5);"><i class="fa fa-save"></i> Save Karein</button>
+    <button class="btn big" onclick="closeEditWasooliModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
+<div id="deleteWasooliModal" class="modal">
+  <div class="modal-content" style="border-top:5px solid #dc2626;">
+    <span class="close" onclick="closeDeleteWasooliModal()">&times;</span>
+    <h2><i class="fa fa-trash" style="color:#dc2626;"></i> Wasooli Delete Karein</h2>
+    <p class="hint" id="deleteWasooliInfo" style="font-weight:600;color:#991b1b;font-size:14px;margin-top:8px;"></p>
+    <p class="hint">Pakka delete karna hai? Ye undo nahi hoga.</p>
+    <button class="btn primary big" onclick="confirmDeleteWasooli(this)" style="background:linear-gradient(135deg,#dc2626,#b91c1c);"><i class="fa fa-trash"></i> Haan, Delete Karein</button>
+    <button class="btn big" onclick="closeDeleteWasooliModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
 <div id="farziDeliverModal" class="modal">
   <div class="modal-content">
     <span class="close" onclick="closeFarziDeliverModal()">&times;</span>
@@ -909,13 +920,12 @@
   </div>
 </div>
 
-<!-- NAYA MODAL: WhatsApp Queue Reminder -->
 <div id="whatsappQueueReminderModal" class="modal">
   <div class="modal-content" style="border-top:5px solid #25D366;">
     <h2><i class="fa fa-paper-plane" style="color:#25D366;"></i> WhatsApp Messages Pending</h2>
     <p class="hint" id="queueReminderText" style="font-weight:600;color:#1e40af;font-size:15px;margin-top:10px;"></p>
     <p class="hint" style="color:#64748b;font-size:13px;">Aap in messages ko WhatsApp par bhej sakte hain ya baad main queue section se bhej sakte hain</p>
-    <button class="btn primary big" onclick="shareAllFromQueue(this)" style="background:linear-gradient(135deg,#25D366,#1da851);"><i class="fa fa-share"></i> 📤 Abhi Share Karein</button>
+    <button class="btn primary big" onclick="goToQueueFromReminder()" style="background:linear-gradient(135deg,#25D366,#1da851);"><i class="fa fa-list"></i> 📤 Queue Kholen</button>
     <button class="btn big" onclick="closeQueueReminderModal()"><i class="fa fa-clock"></i> ⏰ Baad Main</button>
   </div>
 </div>
