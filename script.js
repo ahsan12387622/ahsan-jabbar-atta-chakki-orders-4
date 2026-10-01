@@ -20,11 +20,9 @@ var isSavingOrder = false;
 var offlineOrdersQueue = [];
 var offlineRoutesQueue = [];
 
-// Deliver confirm modal ke liye
 var pendingDeliverRouteId = null;
 var pendingDeliverShopId = null;
 
-// WhatsApp share modal ke liye
 var pendingWhatsappUrl = null;
 var pendingWhatsappMessage = null;
 
@@ -111,6 +109,53 @@ var DEFAULT_DASHBOARD = [
   { key: 'load', label: 'Aaj Ka Load', show: true, size: 100, view: 'list' },
   { key: 'routes', label: 'Aaj Ke Routes', show: true, size: 100, view: 'list' }
 ];
+
+// ================== SPLASH / SCREEN HELPERS ==================
+function hideAllScreens() {
+  var splash = document.getElementById('splashScreen');
+  var login = document.getElementById('loginScreen');
+  var pin = document.getElementById('pinScreen');
+  var app = document.getElementById('appWrapper');
+  if (splash) splash.style.display = 'none';
+  if (login) login.style.display = 'none';
+  if (pin) pin.style.display = 'none';
+  if (app) app.style.display = 'none';
+}
+
+function showSplashScreen() {
+  hideAllScreens();
+  var splash = document.getElementById('splashScreen');
+  if (splash) splash.style.display = 'flex';
+}
+
+function showLoginScreenOnly() {
+  hideAllScreens();
+  var login = document.getElementById('loginScreen');
+  if (login) login.style.display = 'flex';
+}
+
+function showPinScreenOnly() {
+  hideAllScreens();
+  var pin = document.getElementById('pinScreen');
+  if (pin) pin.style.display = 'flex';
+  if (currentUser) {
+    var nameEl = document.getElementById('pinUserName');
+    if (nameEl) nameEl.textContent = 'Hi, ' + (currentUser.display || currentUser.user);
+  }
+  var pinInput = document.getElementById('pinInput');
+  if (pinInput) {
+    pinInput.value = '';
+    setTimeout(function() { pinInput.focus(); }, 200);
+  }
+  var err = document.getElementById('pinError');
+  if (err) err.textContent = '';
+}
+
+function showAppScreenOnly() {
+  hideAllScreens();
+  var app = document.getElementById('appWrapper');
+  if (app) app.style.display = 'block';
+}
 
 // ================== TOAST ==================
 var toastTimeout = null;
@@ -768,12 +813,8 @@ function formatOrderItemsText(items) {
   return lines.join('\n');
 }
 
-// ✅ NAYA: WhatsApp Share Modal kholo (alert ki jagah)
 function openWhatsappShareModal(order, shop) {
-  if (!shop || !shop.mobile) {
-    console.log('Shop mobile nahi hai, WhatsApp nahi kholega');
-    return;
-  }
+  if (!shop || !shop.mobile) return;
   var number = formatWaNumber(shop.mobile);
   if (!number) return;
   var bizName = settings.bizName || 'Atta Chakki';
@@ -793,10 +834,7 @@ function openWhatsappShareModal(order, shop) {
 }
 
 function openWhatsappDeliveredShareModal(order, shop) {
-  if (!shop || !shop.mobile) {
-    console.log('Shop mobile nahi hai, WhatsApp nahi kholega');
-    return;
-  }
+  if (!shop || !shop.mobile) return;
   var number = formatWaNumber(shop.mobile);
   if (!number) return;
   var bizName = settings.bizName || 'Atta Chakki';
@@ -829,10 +867,7 @@ function openWhatsappDeliveredShareModal(order, shop) {
 }
 
 function openWhatsappMultiDeliveredShareModal(items, shop) {
-  if (!shop || !shop.mobile) {
-    console.log('Shop mobile nahi hai, WhatsApp nahi kholega');
-    return;
-  }
+  if (!shop || !shop.mobile) return;
   var number = formatWaNumber(shop.mobile);
   if (!number) return;
   var bizName = settings.bizName || 'Atta Chakki';
@@ -980,13 +1015,7 @@ function goHome() {
 
 // ================== PIN SYSTEM ==================
 function showPinScreen() {
-  document.getElementById('loginScreen').style.display = 'none';
-  document.getElementById('appWrapper').style.display = 'none';
-  document.getElementById('pinScreen').style.display = 'flex';
-  document.getElementById('pinUserName').textContent = 'Hi, ' + (currentUser.display || currentUser.user);
-  document.getElementById('pinInput').value = '';
-  document.getElementById('pinError').textContent = '';
-  setTimeout(function() { document.getElementById('pinInput').focus(); }, 200);
+  showPinScreenOnly();
 }
 function verifyPin() {
   var entered = document.getElementById('pinInput').value.trim();
@@ -999,7 +1028,7 @@ function verifyPin() {
     document.getElementById('pinInput').value = '';
     return;
   }
-  document.getElementById('pinScreen').style.display = 'none';
+  showAppScreenOnly();
   showApp();
 }
 function pinForgot() {
@@ -1017,8 +1046,7 @@ function pinForgot() {
   localStorage.removeItem('currentUser');
   currentUser = null;
   isLoggedIn = false;
-  document.getElementById('pinScreen').style.display = 'none';
-  document.getElementById('loginScreen').style.display = 'flex';
+  showLoginScreenOnly();
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
 }
@@ -1157,8 +1185,12 @@ function doLogin() {
     isLoggedIn = true;
     localStorage.setItem('isLoggedIn', 'true');
     localStorage.setItem('currentUser', JSON.stringify(found));
-    showApp();
-    if (!currentUser.pin) {
+
+    if (currentUser.pin && String(currentUser.pin).length === 4) {
+      showPinScreenOnly();
+    } else {
+      showAppScreenOnly();
+      showApp();
       setTimeout(function() { promptPinSetup(); }, 500);
     }
   }).catch(function(e) {
@@ -1167,7 +1199,12 @@ function doLogin() {
       currentUser = cachedUser;
       isLoggedIn = true;
       localStorage.setItem('isLoggedIn', 'true');
-      showApp();
+      if (currentUser.pin && String(currentUser.pin).length === 4) {
+        showPinScreenOnly();
+      } else {
+        showAppScreenOnly();
+        showApp();
+      }
       return;
     }
     err.textContent = 'Login nahi ho saka. Internet check karein.';
@@ -1199,11 +1236,10 @@ function doLogout() {
   isLoggedIn = false; currentUser = null;
   localStorage.setItem('isLoggedIn', 'false');
   localStorage.removeItem('currentUser');
-  document.getElementById('appWrapper').style.display = 'none';
+  showLoginScreenOnly();
   document.getElementById('pinSetupBanner').style.display = 'none';
   document.getElementById('offlineBanner').style.display = 'none';
   document.getElementById('pendingBanner').style.display = 'none';
-  document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('loginUser').value = '';
   document.getElementById('loginPass').value = '';
   hideSignup();
@@ -1224,9 +1260,6 @@ function changePassword() {
 }
 
 function showApp() {
-  document.getElementById('loginScreen').style.display = 'none';
-  document.getElementById('pinScreen').style.display = 'none';
-  document.getElementById('appWrapper').style.display = 'block';
   loadLayouts();
   renderSidebarNav();
   applySettings();
@@ -1243,6 +1276,14 @@ function showApp() {
   populateSalesFilters();
   if (isAdmin()) renderUsers();
   updateOnlineStatus();
+
+  if (firebaseReady) {
+    setupRealtimeListeners();
+    setTimeout(function() {
+      autoShiftPendingOrders();
+      renderDashboard();
+    }, 1500);
+  }
 }
 
 // ================== MANUAL SYNC ==================
@@ -2706,7 +2747,6 @@ function closeRouteModal() {
   document.getElementById('routeModal').classList.remove('active');
 }
 
-// ✅ NAYA: Deliver Confirm Modal
 function openDeliverConfirmModal(routeId, shopId) {
   if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
 
@@ -2729,7 +2769,6 @@ function openDeliverConfirmModal(routeId, shopId) {
     return;
   }
 
-  // Modal mein products list dikhao
   var body = document.getElementById('deliverConfirmBody');
   var nameEl = document.getElementById('deliverConfirmShopName');
   if (nameEl) nameEl.textContent = shop.name + ' ke ye products deliver karein?';
@@ -2765,7 +2804,6 @@ function openDeliverConfirmModal(routeId, shopId) {
   }
   if (body) body.innerHTML = html;
 
-  // Store karo
   pendingDeliverRouteId = routeId;
   pendingDeliverShopId = shopId;
 
@@ -2786,7 +2824,6 @@ function confirmDeliverConfirmModal() {
   deliverRouteShop(routeId, shopId);
 }
 
-// ✅ UPDATED: deliverRouteShop — ab confirm() nahi, seedha modal se aata hai
 function deliverRouteShop(routeId, shopId) {
   if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
 
@@ -2832,7 +2869,6 @@ function deliverRouteShop(routeId, shopId) {
     deliveredItemsForWa.push({ product: pName, maund: mTot, kg: 0, kgList: kgList.slice() });
   }
 
-  // Orders ko deliver mark karo
   for (var p = 0; p < shopProductsInRoute.length; p++) {
     var pName = shopProductsInRoute[p];
     for (var j = 0; j < orders.length; j++) {
@@ -2851,11 +2887,8 @@ function deliverRouteShop(routeId, shopId) {
   }
 
   cleanupRouteAfterDelivery();
-  // ✅ Route modal band NAHI karo — route window khuli rahe
-  // ✅ Dashboard pr bhi NAHI jao
-  // Sirf route modal refresh karo
+
   setTimeout(function() {
-    // Route modal ko refresh karo (agar khula hai)
     var routeModal = document.getElementById('routeModal');
     if (routeModal && routeModal.classList.contains('active')) {
       openRouteModal(routeId);
@@ -2864,7 +2897,6 @@ function deliverRouteShop(routeId, shopId) {
     renderDashboard();
     showToast('✅ ' + shop.name + ' ke saare products deliver ho gaye!', 'success');
 
-    // WhatsApp share modal kholo
     if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
       openWhatsappMultiDeliveredShareModal(deliveredItemsForWa, shop);
     }
@@ -3130,7 +3162,6 @@ function saveMultiOrder(btn) {
     prepareOrderForm();
     showPage('dashboard');
 
-    // ✅ WhatsApp Share Modal kholo (agar online + shop mobile hai)
     if (!wasOffline && shop && shop.mobile) {
       openWhatsappShareModal(newOrder, shop);
     }
@@ -3918,46 +3949,56 @@ function closeModal() {
   document.getElementById('modal').classList.remove('active');
 }
 
-// ================== INIT ==================
+// ================== INIT (SABSE IMPORTANT) ==================
 window.addEventListener('load', function() {
   applySettings();
   updateOnlineStatus();
 
+  showSplashScreen();
+
+  var loggedIn = localStorage.getItem('isLoggedIn') === 'true';
+  var cachedUser = JSON.parse(localStorage.getItem('currentUser'));
+
+  if (loggedIn && cachedUser) {
+    currentUser = cachedUser;
+    isLoggedIn = true;
+
+    initFirebase(function() {
+      setTimeout(function() {
+        decideStartupScreen();
+        if (firebaseReady) {
+          loadAllData(function() {
+            console.log('✅ Background data loaded');
+          });
+        }
+      }, 300);
+    });
+    return;
+  }
+
   initFirebase(function() {
     setTimeout(function() {
-      var loggedIn = localStorage.getItem('isLoggedIn') === 'true';
-      var cachedUser = JSON.parse(localStorage.getItem('currentUser'));
-
-      if (loggedIn && cachedUser) {
-        currentUser = cachedUser;
-        isLoggedIn = true;
-        showApp();
-
-        if (firebaseReady && isOnline && cachedUser.id) {
-          db.collection('users').doc(String(cachedUser.id)).get().then(function(doc) {
-            if (doc.exists) {
-              var d = doc.data();
-              d.id = doc.id;
-              currentUser = d;
-              localStorage.setItem('currentUser', JSON.stringify(d));
-              loadLayouts();
-              renderSidebarNav();
-              applySettings();
-              if (isAdmin()) renderUsers();
-            }
-          }).catch(function(e) { console.log(e); });
-        }
-        return;
-      }
-
-      document.getElementById('loginScreen').style.display = 'flex';
-      document.getElementById('appWrapper').style.display = 'none';
-      document.getElementById('pinScreen').style.display = 'none';
-
-      if (cachedUser && cachedUser.pin && String(cachedUser.pin).length === 4) {
-        currentUser = cachedUser;
-        showPinScreen();
-      }
-    }, 500);
+      decideStartupScreen();
+    }, 300);
   });
 });
+
+function decideStartupScreen() {
+  var loggedIn = localStorage.getItem('isLoggedIn') === 'true';
+  var cachedUser = JSON.parse(localStorage.getItem('currentUser'));
+
+  if (loggedIn && cachedUser) {
+    currentUser = cachedUser;
+    isLoggedIn = true;
+
+    if (currentUser.pin && String(currentUser.pin).length === 4) {
+      showPinScreenOnly();
+    } else {
+      showAppScreenOnly();
+      showApp();
+    }
+    return;
+  }
+
+  showLoginScreenOnly();
+}
