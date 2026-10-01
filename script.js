@@ -806,14 +806,22 @@ function shareFromQueue(id) {
   for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].id === id) { q = whatsappQueue[i]; break; } }
   if (!q) return;
   if (!isOnline) { showToast('📴 Internet nahi hai', 'warning', 3000); return; }
+  
+  // Pehle status update karo — chahe WhatsApp khule ya na khule
+  q.status = 'shared';
+  q.sharedAt = new Date().toISOString();
+  if (firebaseReady) {
+    db.collection('whatsappQueue').doc(q.id).update({ status: 'shared', sharedAt: q.sharedAt }).catch(function(e) { console.log(e); });
+  }
+  saveQueueToLocalStorage();
+  renderWhatsappQueue();
+  updateQueueBadge();
+  
+  // Ab WhatsApp kholo
   var url = 'https://wa.me/' + q.mobile + '?text=' + encodeURIComponent(q.message);
-  var win = window.open(url, '_blank');
-  if (win) {
-    q.status = 'shared'; q.sharedAt = new Date().toISOString();
-    if (firebaseReady) db.collection('whatsappQueue').doc(q.id).update({ status: 'shared', sharedAt: q.sharedAt }).catch(function(e) {});
-    saveQueueToLocalStorage(); renderWhatsappQueue(); updateQueueBadge();
-    showToast('✅ Message WhatsApp par khul gaya', 'success');
-  } else { showToast('⚠️ Popup block ho gaya — browser mein allow karein', 'warning', 4000); }
+  window.open(url, '_blank');
+  
+  showToast('✅ Message WhatsApp par khul gaya', 'success');
 }
 function deleteFromQueue(id) {
   if (!confirm('Ye message queue se delete karein?')) return;
