@@ -26,10 +26,8 @@
 </head>
 <body>
 
-<!-- ✅ Toast Notification -->
 <div id="toast" class="toast"></div>
 
-<!-- ✅ Splash / Loading Screen — pehle yahi dikhega jab tak decide na ho -->
 <div id="splashScreen" class="splash-screen">
   <div class="splash-box">
     <div class="splash-logo"><i class="fa fa-wheat-awn"></i></div>
@@ -540,6 +538,12 @@
       <p class="hint" id="syncStatusText">🟢 Online — Sab sync ho gaya</p>
       <p class="hint" id="pendingChangesText" style="display:none;"></p>
     </div>
+    <div class="box" id="resetDataBox" style="display:none;">
+      <h3><i class="fa fa-rotate-left"></i> Reset Data</h3>
+      <button class="btn primary" onclick="confirmResetAllData()" style="width:100%; margin-top:6px;">
+        <i class="fa fa-rotate-left"></i> 🔄 Reset All Data
+      </button>
+    </div>
     <div class="box" id="hiddenMenuBox" style="display:none;">
       <h3><i class="fa fa-eye-slash"></i> Hidden Menu Items</h3>
       <p class="hint">Ye menu items aapne sidebar se hide kiye hain.</p>
@@ -639,6 +643,18 @@
     <div id="whatsappShareMessage" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;margin:12px 0;white-space:pre-wrap;font-size:13px;color:#166534;max-height:300px;overflow-y:auto;"></div>
     <button class="btn primary big" onclick="confirmWhatsappShare()"><i class="fa-brands fa-whatsapp"></i> Share on WhatsApp</button>
     <button class="btn big" onclick="closeWhatsappShareModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
+<!-- ✅ Reset Confirm Modal -->
+<div id="resetConfirmModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeResetConfirmModal()">&times;</span>
+    <h2><i class="fa fa-rotate-left" style="color:#dc2626;"></i> Reset All Data</h2>
+    <p class="hint" id="resetConfirmText" style="font-weight:600;color:#dc2626;font-size:15px;margin-top:8px;"></p>
+    <div id="resetConfirmBody" style="margin:14px 0;"></div>
+    <button class="btn primary big" onclick="proceedResetConfirm()" id="resetConfirmBtn"><i class="fa fa-rotate-left"></i> Haan, Reset Karein</button>
+    <button class="btn big" onclick="closeResetConfirmModal()"><i class="fa fa-times"></i> Cancel</button>
   </div>
 </div>
 
