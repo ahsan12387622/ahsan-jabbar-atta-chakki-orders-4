@@ -1164,6 +1164,29 @@ function addOrderAmountToAccountIfNeeded(order) {
   if (firebaseReady && isOnline && String(order.id).indexOf('local_') !== 0) {
     db.collection('orders').doc(String(order.id)).update({ amountAddedToAccount: true }).catch(function(e) { console.log(e); });
   }
+}
+function shareAccountToWhatsapp() {
+  if (!currentAccountShopId) return;
+  var shop = getShopById(currentAccountShopId);
+  if (!shop) return;
+  if (!shop.mobile) { showToast('Shopkeeper ka mobile number nahi hai', 'warning', 3000); return; }
+  var number = formatWaNumber(shop.mobile);
+  if (!number) { showToast('Mobile number galat hai', 'warning', 3000); return; }
+  var bizName = settings.bizName || 'Atta Chakki';
+  var totalKhata = getShopTotalKhata(currentAccountShopId);
+  var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n' +
+    '📅 ' + getCurrentDateTimeText() + '\n\n' +
+    'Aap ka total khata: ' + formatRs(totalKhata) + '\n\n' +
+    'Baqi udhaar: ' + formatRs(totalKhata) + '\n\n' +
+    'Shukriya!\n- ' + bizName + '\n\n' +
+    '👤 Sent by: ' + getCurrentUserDisplayForWa();
+  var url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(msg);
+  pendingWhatsappUrl = url;
+  pendingWhatsappMessage = msg;
+  var modal = document.getElementById('whatsappShareModal');
+  var msgBox = document.getElementById('whatsappShareMessage');
+  if (msgBox) msgBox.textContent = msg;
+  if (modal) modal.classList.add('active');
 }function openAmountModal() {
   if (currentOrderItems.length === 0) return;
   var list = document.getElementById('amountItemsList');
@@ -1351,6 +1374,14 @@ function markPendingPaid(orderId) {
   var totalEl = document.getElementById('farziDetailTotal');
   if (totalEl) totalEl.textContent = formatRs(getFarziPendingTotal(order.shopId));
   renderPendingAmounts();
+  
+  // ✅ NAYA: WhatsApp preview trigger
+  var shop = getShopById(order.shopId);
+  if (shop && shop.mobile) {
+    setTimeout(function() { openWhatsappFarziPaidModal(order, shop); }, 500);
+  } else {
+    showToast('⚠️ Shopkeeper ka mobile number nahi hai', 'warning', 3000);
+  }
 }
 function closeFarziDeliverModal() { document.getElementById('farziDeliverModal').classList.remove('active'); currentFarziDeliverOrderId = null; }
 function openFarziDeliverModal(orderId) {
@@ -1380,10 +1411,18 @@ function markFarziDelivered(status, btn) {
   if (firebaseReady) {
     db.collection('orders').doc(String(order.id)).update({ amountStatus: order.amountStatus, paidAt: order.paidAt || null, paidBy: order.paidBy || null }).catch(function(e) { console.log(e); });
   }
+  var shop = getShopById(order.shopId);
   setTimeout(function() {
     if (btn) enableButton(btn); closeFarziDeliverModal();
     showToast(status === 'paid' ? '✅ Amount paid mark' : '⏳ Pending mein daala', 'success');
     renderPendingAmounts(); renderDashboard();
+    
+    // ✅ NAYA: WhatsApp preview trigger
+    if (shop && shop.mobile) {
+      setTimeout(function() { openWhatsappFarziDeliverModal(order, shop, status); }, 500);
+    } else {
+      showToast('⚠️ Shopkeeper ka mobile number nahi hai', 'warning', 3000);
+    }
   }, 200);
 }
 function filterShopkeepers(category, btn) {
@@ -1393,6 +1432,54 @@ function filterShopkeepers(category, btn) {
   if (btn) btn.classList.add('active');
   renderShopkeepers();
 }
+
+// ✅ NAYA: Farzi order deliver par WhatsApp message
+function openWhatsappFarziDeliverModal(order, shop, status) {
+  if (!shop || !shop.mobile) return;
+  var number = formatWaNumber(shop.mobile);
+  if (!number) return;
+  var bizName = settings.bizName || 'Atta Chakki';
+  var itemsText = formatOrderItemsText(order.items);
+  var statusText = status === 'paid' ? '✅ Payment clear ho gayi hai' : '⏳ Payment abhi PENDING hai\nApne order ki payment jald az jald adaa karein.';
+  var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n' +
+    '📅 ' + getCurrentDateTimeText() + '\n\n' +
+    'Aap ka order deliver ho chuka hai:\n\n' + itemsText + '\n\n' +
+    '💰 Total Amount: ' + formatRs(order.totalAmount) + '\n' +
+    statusText + '\n\n' +
+    'Shukriya!\n- ' + bizName + '\n\n' +
+    '👤 Delivered by: ' + getCurrentUserDisplayForWa();
+  pendingWhatsappUrl = 'https://wa.me/' + number + '?text=' + encodeURIComponent(msg);
+  pendingWhatsappMessage = msg;
+  var modal = document.getElementById('whatsappShareModal');
+  var msgBox = document.getElementById('whatsappShareMessage');
+  if (msgBox) msgBox.textContent = msg;
+  if (modal) modal.classList.add('active');
+}
+
+// ✅ NAYA: Amount Pending "De Diya" par WhatsApp message
+function openWhatsappFarziPaidModal(order, shop) {
+  if (!shop || !shop.mobile) return;
+  var number = formatWaNumber(shop.mobile);
+  if (!number) return;
+  var bizName = settings.bizName || 'Atta Chakki';
+  var itemsText = formatOrderItemsText(order.items);
+  var originalDateTime = getOrderDateTimeText(order);
+  var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n' +
+    '📅 Aaj: ' + getCurrentDateTimeText() + '\n\n' +
+    'Aap ne is tarikh (' + originalDateTime + ') ko yeh order karwaya tha:\n\n' + itemsText + '\n\n' +
+    '💰 Total Amount: ' + formatRs(order.totalAmount) + '\n' +
+    '⏳ Payment pending thi\n' +
+    '✅ Ab payment clear ho gayi hai\n\n' +
+    'Shukriya!\n- ' + bizName + '\n\n' +
+    '👤 Marked by: ' + getCurrentUserDisplayForWa();
+  pendingWhatsappUrl = 'https://wa.me/' + number + '?text=' + encodeURIComponent(msg);
+  pendingWhatsappMessage = msg;
+  var modal = document.getElementById('whatsappShareModal');
+  var msgBox = document.getElementById('whatsappShareMessage');
+  if (msgBox) msgBox.textContent = msg;
+  if (modal) modal.classList.add('active');
+}
+
 function openWhatsappShareModal(order, shop) {
   if (!shop || !shop.mobile) return;
   var number = formatWaNumber(shop.mobile); if (!number) return;
