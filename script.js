@@ -1042,6 +1042,27 @@ function addToAccount(shopId, amount, type, orderId, productName, note) {
   }
 }
 
+// ✅ NAYA HELPER: Order deliver hone par account mein amount add karo (sirf ek baar)
+function addOrderAmountToAccountIfNeeded(order) {
+  if (!order || !order.shopId) return;
+  var shop = getShopById(order.shopId);
+  if (!shop) return;
+  var isFarziOrder = shop.category === 'farzi';
+  if (isFarziOrder) return; // Farzi ka amount account mein add nahi hota
+  if (order.status !== 'Delivered') return; // Sirf delivered order ka amount
+  if (order.amountAddedToAccount) return; // Pehle add ho chuka hai
+  var totalAmt = parseInt(order.totalAmount) || 0;
+  if (totalAmt <= 0) return;
+  for (var i = 0; i < order.items.length; i++) {
+    var itm = order.items[i];
+    if (itm.amount && itm.amount > 0) {
+      addToAccount(order.shopId, itm.amount, 'order', order.id, itm.product);
+    }
+  }
+  order.amountAddedToAccount = true;
+  saveToFirebase('orders', order.id, order);
+}
+
 function openAmountModal() {
   if (currentOrderItems.length === 0) return;
   var list = document.getElementById('amountItemsList');
@@ -1110,7 +1131,8 @@ function saveMultiOrderActual() {
     shopId: shopId, items: items, totalKg: totalKg, totalAmount: totalAmount,
     date: date, notes: notes, status: 'Pending',
     createdBy: currentUser ? currentUser.user : 'unknown',
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    amountAddedToAccount: false  // ✅ NAYA: track karne ke liye
   };
   var shop = getShopById(shopId);
   var wasOffline = !isOnline;
@@ -1118,19 +1140,16 @@ function saveMultiOrderActual() {
   if (isFarzi) newOrder.amountStatus = 'pending';
   newOrder.id = 'local_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   newOrder._offlinePending = wasOffline;
+  // ✅ Order save — ab amount account mein add NAHI hoga
   db.collection('orders').add({
     shopId: newOrder.shopId, items: newOrder.items, totalKg: newOrder.totalKg,
     totalAmount: newOrder.totalAmount, date: newOrder.date, notes: newOrder.notes,
     status: newOrder.status, createdBy: newOrder.createdBy, createdAt: newOrder.createdAt,
-    amountStatus: newOrder.amountStatus || null
+    amountStatus: newOrder.amountStatus || null,
+    amountAddedToAccount: false
   }).then(function(ref) {
     newOrder.id = ref.id;
     newOrder._offlinePending = false;
-    if (!isFarzi && totalAmount > 0) {
-      for (var i = 0; i < items.length; i++) {
-        if (items[i].amount > 0) addToAccount(shopId, items[i].amount, 'order', ref.id, items[i].product);
-      }
-    }
   }).catch(function(e) {
     console.log('Order add error:', e);
     showToast('❌ Order save nahi ho saka: ' + (e.message || 'Unknown'), 'error', 4000);
@@ -2163,6 +2182,8 @@ function deliverSelectedItems(btn) {
       }
       order.status = checkOrderDelivered(order) ? 'Delivered' : 'Partial';
       saveToFirebase('orders', order.id, order);
+      // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
+      addOrderAmountToAccountIfNeeded(order);
       if (isFarziShop && order.status === 'Delivered' && deliveredOrderIds.indexOf(order.id) === -1) deliveredOrderIds.push(order.id);
     }
     deliveredItemsForWa.push({ product: pd.product, maund: pd.maund, kg: pd.kg, kgList: pd.kgList.slice() });
@@ -2780,6 +2801,8 @@ function deliverRouteShop(routeId, shopId) {
       }
       o.status = checkOrderDelivered(o) ? 'Delivered' : 'Partial';
       saveToFirebase('orders', o.id, o);
+      // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
+      addOrderAmountToAccountIfNeeded(o);
       if (isFarzi && o.status === 'Delivered' && pendingOrderIds.indexOf(o.id) === -1) pendingOrderIds.push(o.id);
     }
   }
@@ -3092,6 +3115,8 @@ function confirmDelivery() {
   }
   order.status = checkOrderDelivered(order) ? 'Delivered' : 'Partial';
   saveToFirebase('orders', order.id, order);
+  // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
+  addOrderAmountToAccountIfNeeded(order);
   closeDeliverModal(); cleanupRouteAfterDelivery();
   var pm = document.getElementById('pendingShopModal'); if (pm && pm.classList.contains('active')) refreshPendingShopModal();
   var shop = getShopById(order.shopId);
@@ -3114,6 +3139,8 @@ function markAllDelivered() {
   }
   order.status = checkOrderDelivered(order) ? 'Delivered' : 'Partial';
   saveToFirebase('orders', order.id, order);
+  // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
+  addOrderAmountToAccountIfNeeded(order);
   closeDeliverModal(); cleanupRouteAfterDelivery();
   var pm = document.getElementById('pendingShopModal'); if (pm && pm.classList.contains('active')) refreshPendingShopModal();
   var shop = getShopById(order.shopId);
@@ -3201,6 +3228,8 @@ function confirmCombinedDelivery() {
     }
     order.status = checkOrderDelivered(order) ? 'Delivered' : 'Partial';
     saveToFirebase('orders', order.id, order);
+    // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
+    addOrderAmountToAccountIfNeeded(order);
   }
   var waShop = null, waOrder = null;
   if (currentCombinedOrderIds.length > 0) {
@@ -3229,6 +3258,8 @@ function markAllCombinedDelivered() {
     }
     order.status = checkOrderDelivered(order) ? 'Delivered' : 'Partial';
     saveToFirebase('orders', order.id, order);
+    // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
+    addOrderAmountToAccountIfNeeded(order);
   }
   var waShop = null, waOrder = null;
   if (currentCombinedOrderIds.length > 0) {
