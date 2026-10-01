@@ -646,7 +646,6 @@
   </div>
 </div>
 
-<!-- ✅ Reset Confirm Modal -->
 <div id="resetConfirmModal" class="modal">
   <div class="modal-content">
     <span class="close" onclick="closeResetConfirmModal()">&times;</span>
@@ -655,6 +654,58 @@
     <div id="resetConfirmBody" style="margin:14px 0;"></div>
     <button class="btn primary big" onclick="proceedResetConfirm()" id="resetConfirmBtn"><i class="fa fa-rotate-left"></i> Haan, Reset Karein</button>
     <button class="btn big" onclick="closeResetConfirmModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
+<!-- ✅ NAYA: Edit Order Modal -->
+<div id="editOrderModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeEditOrderModal()">&times;</span>
+    <h2><i class="fa fa-edit" style="color:#6366f1;"></i> Order Edit Karein</h2>
+    <p class="hint" id="editOrderShopName" style="font-weight:700;color:#166534;font-size:15px;margin-top:8px;"></p>
+    <p class="hint" id="editOrderDateLabel" style="font-size:12px;color:#64748b;"></p>
+    <div id="editOrderItemsList" style="margin:14px 0;"></div>
+    <button class="btn small" onclick="openAddNewItemToEdit()" style="width:100%;margin-bottom:10px;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;font-weight:700;">
+      <i class="fa fa-plus"></i> + Naya Item Add Karein
+    </button>
+    <button class="btn primary big" onclick="saveEditedOrder(this)"><i class="fa fa-save"></i> Order Update Karein</button>
+    <button class="btn big" onclick="closeEditOrderModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
+<!-- ✅ NAYA: Edit Item Modal (product + quantity edit karne ke liye) -->
+<div id="editItemModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeEditItemModal()">&times;</span>
+    <h2><i class="fa fa-edit" style="color:#6366f1;"></i> Item Edit Karein</h2>
+    <div class="form-group">
+      <label><i class="fa fa-box"></i> Product</label>
+      <select id="editItemProduct"></select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Maund</label>
+        <input type="number" id="editItemMaund" min="0" placeholder="0" />
+      </div>
+      <div class="form-group">
+        <label>Kg</label>
+        <input type="number" id="editItemKg" min="0" placeholder="0" />
+      </div>
+    </div>
+    <button class="btn primary big" onclick="confirmEditItem()"><i class="fa fa-check"></i> Save Karein</button>
+    <button class="btn big" onclick="closeEditItemModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
+<!-- ✅ NAYA: Cancel Order Confirm Modal -->
+<div id="cancelOrderModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeCancelOrderModal()">&times;</span>
+    <h2><i class="fa fa-times-circle" style="color:#dc2626;"></i> Order Cancel Karein</h2>
+    <p class="hint" id="cancelOrderText" style="font-weight:600;color:#dc2626;font-size:15px;margin-top:8px;"></p>
+    <div id="cancelOrderBody" style="margin:14px 0;"></div>
+    <button class="btn primary big" onclick="confirmCancelOrder(this)" style="background:#dc2626;"><i class="fa fa-times"></i> Haan, Cancel Karein</button>
+    <button class="btn big" onclick="closeCancelOrderModal()"><i class="fa fa-arrow-left"></i> Wapas</button>
   </div>
 </div>
 
