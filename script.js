@@ -26,6 +26,12 @@ var pendingDeliverShopId = null;
 var pendingWhatsappUrl = null;
 var pendingWhatsappMessage = null;
 
+// ✅ Reset data ke liye
+var resetConfirmStage = 0; // 0 = first, 1 = second (final)
+
+// ✅ Back button tracking
+var isHandlingBackButton = false;
+
 function initFirebase(callback) {
   if (firebaseLoaded) { if (callback) callback(); return; }
   firebaseLoaded = true;
@@ -109,6 +115,78 @@ var DEFAULT_DASHBOARD = [
   { key: 'load', label: 'Aaj Ka Load', show: true, size: 100, view: 'list' },
   { key: 'routes', label: 'Aaj Ke Routes', show: true, size: 100, view: 'list' }
 ];
+
+// ================== BACK BUTTON HANDLING ==================
+function initBackButtonHandling() {
+  // Pehli entry push karo
+  history.pushState({ page: 'dashboard', depth: 0 }, '');
+
+  window.addEventListener('popstate', function(event) {
+    if (isHandlingBackButton) return;
+    isHandlingBackButton = true;
+
+    setTimeout(function() {
+      handleBackButton();
+      isHandlingBackButton = false;
+    }, 50);
+  });
+}
+
+function handleBackButton() {
+  // ✅ Pehle check karo: koi modal khula hai?
+  var openModal = document.querySelector('.modal.active');
+  if (openModal) {
+    var modalId = openModal.id;
+    if (modalId === 'pendingShopModal') closePendingShopModal();
+    else if (modalId === 'modal') closeModal();
+    else if (modalId === 'deliverModal') closeDeliverModal();
+    else if (modalId === 'routeModal') closeRouteModal();
+    else if (modalId === 'pinSetupModal') closePinSetup();
+    else if (modalId === 'salesShopModal') closeSalesShopModal();
+    else if (modalId === 'salesProductModal') closeSalesProductModal();
+    else if (modalId === 'deliverConfirmModal') closeDeliverConfirmModal();
+    else if (modalId === 'whatsappShareModal') closeWhatsappShareModal();
+    else if (modalId === 'resetConfirmModal') closeResetConfirmModal();
+    else openModal.classList.remove('active');
+
+    // History mein wapas push karo taake agli back bhi kaam kare
+    history.pushState({ modalClosed: true }, '');
+    return;
+  }
+
+  // ✅ Koi modal nahi khula — page back logic
+  var activePage = document.querySelector('.page.active');
+  var pageId = activePage ? activePage.id : 'dashboard';
+
+  // Dashboard par — app minimize/close
+  if (pageId === 'dashboard') {
+    window.history.back();
+    return;
+  }
+
+  // New Order page par — steps ka logic
+  if (pageId === 'neworder') {
+    var step3 = document.getElementById('quantityStep');
+    var step2 = document.getElementById('productPickerStep');
+    if (step3 && step3.style.display === 'block') {
+      cancelQty();
+      history.pushState({ page: 'neworder', step: 2 }, '');
+      return;
+    }
+    if (step2 && step2.style.display === 'block') {
+      changeShopkeeper();
+      history.pushState({ page: 'neworder', step: 1 }, '');
+      return;
+    }
+    showPage('dashboard');
+    history.pushState({ page: 'dashboard' }, '');
+    return;
+  }
+
+  // Baaki koi bhi page par — Dashboard
+  showPage('dashboard');
+  history.pushState({ page: 'dashboard' }, '');
+}
 
 // ================== SPLASH / SCREEN HELPERS ==================
 function hideAllScreens() {
@@ -520,6 +598,106 @@ function saveSettingsFirebase() {
   if (!firebaseReady) return;
   saveToFirebase('settings', 'products', { list: products });
   saveToFirebase('settings', 'business', { bizName: settings.bizName });
+}
+
+// ================== RESET ALL DATA ==================
+function confirmResetAllData() {
+  if (!isAdmin()) { showToast('Sirf Admin reset kar sakta hai', 'error'); return; }
+  resetConfirmStage = 0;
+  var textEl = document.getElementById('resetConfirmText');
+  var bodyEl = document.getElementById('resetConfirmBody');
+  var btnEl = document.getElementById('resetConfirmBtn');
+  if (textEl) textEl.textContent = 'Pakka reset karna hai? Saara data delete ho jayega.';
+  if (bodyEl) bodyEl.innerHTML = '<p style="color:#64748b;font-size:14px;margin:10px 0;">Ye delete hoga: <b>Shopkeepers, Products, Orders, Routes</b><br>Ye safe rahega: <b>Users, PIN, Business Name</b></p>';
+  if (btnEl) btnEl.innerHTML = '<i class="fa fa-arrow-right"></i> Haan, Aage Badhein';
+  document.getElementById('resetConfirmModal').classList.add('active');
+}
+
+function proceedResetConfirm() {
+  if (resetConfirmStage === 0) {
+    // Stage 1 → Stage 2 (final warning)
+    resetConfirmStage = 1;
+    var textEl = document.getElementById('resetConfirmText');
+    var bodyEl = document.getElementById('resetConfirmBody');
+    var btnEl = document.getElementById('resetConfirmBtn');
+    if (textEl) textEl.textContent = '⚠️ Aakhri baar pooch rahe hain — SAB KUCH delete ho jayega!';
+    if (bodyEl) bodyEl.innerHTML = '<p style="color:#dc2626;font-size:14px;margin:10px 0;font-weight:600;">Ye action undo nahi ho sakta. Shopkeepers, Products, Orders, aur Routes — sab kuch permanently delete ho jayega.</p>';
+    if (btnEl) btnEl.innerHTML = '<i class="fa fa-rotate-left"></i> Haan, Confirm Reset';
+    return;
+  }
+  // Stage 2 → Actual reset
+  doResetAllData();
+}
+
+function closeResetConfirmModal() {
+  document.getElementById('resetConfirmModal').classList.remove('active');
+  resetConfirmStage = 0;
+}
+
+function doResetAllData() {
+  closeResetConfirmModal();
+
+  if (!firebaseReady) {
+    showToast('Firebase load nahi hua — reset nahi ho sakta', 'error');
+    return;
+  }
+
+  var btn = document.getElementById('resetConfirmBtn');
+  var proceedBtn = null;
+  var progressCount = 0;
+  var totalDelete = 0;
+
+  showToast('⏳ Reset ho raha hai... intezaar karein', 'info', 5000);
+
+  // Step 1: Shopkeepers delete
+  db.collection('shopkeepers').get().then(function(snap) {
+    var batch = db.batch();
+    snap.forEach(function(doc) { batch.delete(doc.ref); });
+    totalDelete += snap.size;
+    return batch.commit();
+  }).then(function() {
+    // Step 2: Orders delete
+    return db.collection('orders').get();
+  }).then(function(snap) {
+    var batch = db.batch();
+    snap.forEach(function(doc) { batch.delete(doc.ref); });
+    totalDelete += snap.size;
+    return batch.commit();
+  }).then(function() {
+    // Step 3: Routes delete
+    return db.collection('routes').get();
+  }).then(function(snap) {
+    var batch = db.batch();
+    snap.forEach(function(doc) { batch.delete(doc.ref); });
+    totalDelete += snap.size;
+    return batch.commit();
+  }).then(function() {
+    // Step 4: Products delete (Firebase mein)
+    return db.collection('settings').doc('products').set({ list: [] });
+  }).then(function() {
+    // ✅ Sab delete ho gaya — local arrays bhi khaali karo
+    shopkeepers = [];
+    orders = [];
+    routes = [];
+    products = [];
+    offlineOrdersQueue = [];
+    offlineRoutesQueue = [];
+
+    // ✅ Firestore listener ne khud update kar diya hoga, lekin manual bhi update kar dete hain
+    renderDashboard();
+    renderShopkeepers();
+    renderRoutes();
+    renderHistory();
+    renderSettings();
+    renderRouteShopPicker();
+    populateSalesFilters();
+    if (isAdmin()) renderUsers();
+
+    showToast('✅ Saara data reset ho gaya!', 'success', 4000);
+  }).catch(function(e) {
+    console.log('Reset error:', e);
+    showToast('❌ Reset mein masla aa gaya: ' + (e.message || 'Unknown'), 'error', 5000);
+  });
 }
 
 // ================== LAYOUT ==================
@@ -1011,12 +1189,11 @@ function goHome() {
   var activePage = document.querySelector('.page.active');
   if (activePage && activePage.id === 'dashboard') return;
   showPage('dashboard');
+  history.pushState({ page: 'dashboard' }, '');
 }
 
 // ================== PIN SYSTEM ==================
-function showPinScreen() {
-  showPinScreenOnly();
-}
+function showPinScreen() { showPinScreenOnly(); }
 function verifyPin() {
   var entered = document.getElementById('pinInput').value.trim();
   var err = document.getElementById('pinError');
@@ -1284,6 +1461,8 @@ function showApp() {
       renderDashboard();
     }, 1500);
   }
+
+  initBackButtonHandling();
 }
 
 // ================== MANUAL SYNC ==================
@@ -1442,6 +1621,8 @@ function showPage(pageId, btn) {
     document.getElementById('editMenuBtn').innerHTML = '<i class="fa fa-pen"></i> Edit Menu';
   }
 
+  history.pushState({ page: pageId }, '');
+
   if (pageId === 'dashboard') {
     mergeOfflineOrders();
     mergeOfflineRoutes();
@@ -1493,6 +1674,12 @@ function renderSettings() {
   if (nameEl) nameEl.value = settings.bizName;
   renderProductsList();
   updateSettingsSyncStatus();
+
+  // ✅ Reset Data box — sirf Admin ko dikhe
+  var resetBox = document.getElementById('resetDataBox');
+  if (resetBox) {
+    resetBox.style.display = isAdmin() ? 'block' : 'none';
+  }
 }
 function renderProductsList() {
   var list = document.getElementById('productsList');
@@ -2973,11 +3160,13 @@ function selectShopkeeperForOrder(shopId) {
   document.getElementById('selectedShopName').textContent = shop.name;
   document.getElementById('selectedShopMobile').innerHTML = '<i class="fa fa-phone"></i> ' + shop.mobile;
   showNewOrderStep(2);
+  history.pushState({ page: 'neworder', step: 2 }, '');
 }
 function changeShopkeeper() {
   selectedShopIdForOrder = null;
   currentOrderItems = [];
   showNewOrderStep(1);
+  history.pushState({ page: 'neworder', step: 1 }, '');
 }
 function renderProductPickerGrid() {
   var grid = document.getElementById('productPickerGrid');
@@ -3019,6 +3208,7 @@ function selectProductForOrder(productName) {
       document.getElementById('qtyKg').value = '';
       updateQtyPreview();
       showNewOrderStep(3);
+      history.pushState({ page: 'neworder', step: 3 }, '');
     } else {
       if (existingIndexes.length === 1) editAddedProduct(existingIndexes[0]);
       else alert('Is product ki ' + existingIndexes.length + ' entries hain. Neeche list se edit karein.');
@@ -3031,6 +3221,7 @@ function selectProductForOrder(productName) {
     document.getElementById('qtyKg').value = '';
     updateQtyPreview();
     showNewOrderStep(3);
+    history.pushState({ page: 'neworder', step: 3 }, '');
   }
 }
 function updateQtyPreview() {
@@ -3043,6 +3234,7 @@ function cancelQty() {
   selectedProductForOrder = null;
   selectedEditIndex = -1;
   showNewOrderStep(2);
+  history.pushState({ page: 'neworder', step: 2 }, '');
 }
 function confirmQtyAdd() {
   var m = parseInt(document.getElementById('qtyMaund').value) || 0;
@@ -3057,6 +3249,7 @@ function confirmQtyAdd() {
   selectedProductForOrder = null;
   selectedEditIndex = -1;
   showNewOrderStep(2);
+  history.pushState({ page: 'neworder', step: 2 }, '');
 }
 function renderAddedProducts() {
   var box = document.getElementById('addedProductsBox');
@@ -3089,6 +3282,7 @@ function editAddedProduct(idx) {
   document.getElementById('qtyKg').value = it.kg > 0 ? it.kg : '';
   updateQtyPreview();
   showNewOrderStep(3);
+  history.pushState({ page: 'neworder', step: 3 }, '');
 }
 function removeAddedProduct(idx) {
   currentOrderItems.splice(idx, 1);
@@ -3949,7 +4143,7 @@ function closeModal() {
   document.getElementById('modal').classList.remove('active');
 }
 
-// ================== INIT (SABSE IMPORTANT) ==================
+// ================== INIT ==================
 window.addEventListener('load', function() {
   applySettings();
   updateOnlineStatus();
