@@ -1,7 +1,7 @@
 // ================== SERVICE WORKER ==================
-// Version v4 — nayi files cache karo, purana clear karo
+// Version v5 — nayi files cache karo, purana clear karo
 
-var CACHE_NAME = 'atta-chakki-v4';
+var CACHE_NAME = 'atta-chakki-v5';
 var urlsToCache = [
   './',
   './index.html',
@@ -14,7 +14,7 @@ var urlsToCache = [
 
 // ================== INSTALL ==================
 self.addEventListener('install', function(event) {
-  console.log('✅ Service Worker v4 installing...');
+  console.log('✅ Service Worker v5 installing...');
   event.waitUntil(
     caches.open(CACHE_NAME).then(function(cache) {
       console.log('✅ Files cached');
@@ -32,7 +32,7 @@ self.addEventListener('install', function(event) {
 
 // ================== ACTIVATE ==================
 self.addEventListener('activate', function(event) {
-  console.log('✅ Service Worker v4 activated');
+  console.log('✅ Service Worker v5 activated');
   event.waitUntil(
     caches.keys().then(function(cacheNames) {
       return Promise.all(
