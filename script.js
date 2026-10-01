@@ -11,7 +11,6 @@ var firebaseConfig = {
 var db = null;
 var firebaseReady = false;
 var firebaseLoaded = false;
-
 var isOnline = navigator.onLine;
 var pendingChangesCount = 0;
 var snapshotListeners = {};
@@ -19,20 +18,17 @@ var firstLoadDone = false;
 var isSavingOrder = false;
 var offlineOrdersQueue = [];
 var offlineRoutesQueue = [];
-
+var offlineAccountsQueue = [];
 var pendingDeliverRouteId = null;
 var pendingDeliverShopId = null;
 var pendingWhatsappUrl = null;
 var pendingWhatsappMessage = null;
-
 var resetConfirmStage = 0;
 var isHandlingBackButton = false;
-
 var currentEditingOrder = null;
 var currentEditOrderItems = [];
 var currentEditItemIndex = -1;
 var currentCancellingOrderId = null;
-
 var accounts = [];
 var currentAccountShopId = null;
 var currentAmountItems = [];
@@ -41,6 +37,8 @@ var currentFilterCategory = 'all';
 var currentFarziDeliverOrderId = null;
 var whatsappQueue = [];
 var currentQueueReminderCount = 0;
+var currentEditingWasooliId = null;
+var currentDeletingWasooliId = null;
 
 function initFirebase(callback) {
   if (firebaseLoaded) { if (callback) callback(); return; }
@@ -84,7 +82,6 @@ var currentDeliverOrderId = null;
 var currentDeliverProduct = null;
 var currentCombinedProduct = null;
 var currentCombinedOrderIds = [];
-
 var selectedShopIdForOrder = null;
 var selectedProductForOrder = null;
 var selectedEditIndex = -1;
@@ -124,7 +121,6 @@ function formatRs(amount) {
   var num = parseInt(amount) || 0;
   return 'Rs. ' + num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
-
 function getUserInitials(user) {
   if (!user) return '??';
   var name = user.display || user.user || '';
@@ -173,7 +169,6 @@ function getCurrentUserDisplayForWa() {
   if (!currentUser) return 'Unknown';
   return getUserDisplayName(currentUser);
 }
-
 function initBackButtonHandling() {
   history.pushState({ page: 'dashboard', depth: 0 }, '');
   window.addEventListener('popstate', function(event) {
@@ -203,6 +198,8 @@ function handleBackButton() {
     else if (modalId === 'wasooliModal') closeWasooliModal();
     else if (modalId === 'farziDeliverModal') closeFarziDeliverModal();
     else if (modalId === 'whatsappQueueReminderModal') closeQueueReminderModal();
+    else if (modalId === 'editWasooliModal') closeEditWasooliModal();
+    else if (modalId === 'deleteWasooliModal') closeDeleteWasooliModal();
     else openModal.classList.remove('active');
     history.pushState({ modalClosed: true }, '');
     return;
@@ -219,7 +216,6 @@ function handleBackButton() {
   }
   showPage('dashboard'); history.pushState({ page: 'dashboard' }, '');
 }
-
 function hideAllScreens() {
   var ids = ['splashScreen','loginScreen','pinScreen','appWrapper'];
   for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) el.style.display = 'none'; }
@@ -236,7 +232,6 @@ function showPinScreenOnly() {
   var err = document.getElementById('pinError'); if (err) err.textContent = '';
 }
 function showAppScreenOnly() { hideAllScreens(); var el = document.getElementById('appWrapper'); if (el) el.style.display = 'block'; }
-
 var toastTimeout = null;
 function showToast(message, type, duration) {
   var toast = document.getElementById('toast');
@@ -248,7 +243,6 @@ function showToast(message, type, duration) {
   toast.classList.add('show');
   toastTimeout = setTimeout(function() { toast.classList.remove('show'); }, duration || 3000);
 }
-
 function disableButton(btn, loadingText) {
   if (!btn) return;
   if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
@@ -260,12 +254,16 @@ function enableButton(btn) {
   btn.disabled = false; btn.classList.remove('loading');
   if (btn.dataset.originalHtml) { btn.innerHTML = btn.dataset.originalHtml; delete btn.dataset.originalHtml; }
 }
-
 function updateOnlineStatus() {
   isOnline = navigator.onLine;
   updateSyncStatusIndicator(); updateOfflineBanner(); updatePendingBanner(); updateSettingsSyncStatus();
 }
-window.addEventListener('online', function() { isOnline = true; updateOnlineStatus(); showToast('🌐 Internet wapas aa gaya — sync ho raha hai...', 'success', 2500); });
+window.addEventListener('online', function() {
+  isOnline = true; updateOnlineStatus();
+  showToast('🌐 Internet wapas aa gaya — sync ho raha hai...', 'success', 2500);
+  syncOfflineAccountsQueue();
+  setTimeout(function() { checkWhatsappQueueReminder(); }, 2000);
+});
 window.addEventListener('offline', function() { isOnline = false; updateOnlineStatus(); showToast('📴 Internet band — ab offline kaam karega', 'warning', 3000); });
 function updateOfflineBanner() { var b = document.getElementById('offlineBanner'); if (!b) return; b.style.display = isOnline ? 'none' : 'block'; }
 function updatePendingBanner() {
@@ -301,11 +299,42 @@ function updateSettingsSyncStatus() {
   }
   var qText = document.getElementById('settingsQueueText');
   if (qText) {
-    if (whatsappQueue.length > 0) qText.textContent = '⏳ ' + whatsappQueue.length + ' messages pending';
+    var pendingQ = 0;
+    for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].status === 'pending') pendingQ++; }
+    if (pendingQ > 0) qText.textContent = '⏳ ' + pendingQ + ' messages pending';
     else qText.textContent = '✅ Koi pending message nahi';
   }
 }
-
+function syncOfflineAccountsQueue() {
+  if (!firebaseReady) return;
+  if (offlineAccountsQueue.length === 0) return;
+  var stillPending = [];
+  var total = offlineAccountsQueue.length;
+  for (var i = 0; i < offlineAccountsQueue.length; i++) {
+    (function(entry) {
+      var copy = JSON.parse(JSON.stringify(entry));
+      delete copy.id;
+      delete copy._offlinePending;
+      db.collection('accounts').add(copy).then(function() {
+        console.log('✅ Offline account synced');
+      }).catch(function(e) { console.log('❌ Offline account sync error:', e); stillPending.push(entry); });
+    })(offlineAccountsQueue[i]);
+  }
+  setTimeout(function() {
+    offlineAccountsQueue = stillPending;
+    saveAccountsQueueToLocalStorage();
+    if (total > 0) showToast('✅ ' + (total - stillPending.length) + ' offline account entries sync ho gaye', 'success', 3000);
+  }, 3000);
+}
+function saveAccountsQueueToLocalStorage() {
+  try { localStorage.setItem('offlineAccountsQueue', JSON.stringify(offlineAccountsQueue)); } catch (e) {}
+}
+function loadAccountsQueueFromLocalStorage() {
+  try {
+    var q = localStorage.getItem('offlineAccountsQueue');
+    if (q) offlineAccountsQueue = JSON.parse(q) || [];
+  } catch (e) { offlineAccountsQueue = []; }
+}
 function setupRealtimeListeners() {
   if (!firebaseReady) return;
   if (!snapshotListeners.shopkeepers) {
@@ -370,26 +399,49 @@ function setupRealtimeListeners() {
   if (!snapshotListeners.accounts) {
     snapshotListeners.accounts = db.collection('accounts').onSnapshot(function(snap) {
       accounts = []; snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; accounts.push(d); });
+      mergeOfflineAccounts();
       refreshAllViews();
     }, function(err) { console.log('Accounts listener:', err); });
   }
   if (!snapshotListeners.whatsappQueue) {
     snapshotListeners.whatsappQueue = db.collection('whatsappQueue').onSnapshot(function(snap) {
-      whatsappQueue = []; snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; whatsappQueue.push(d); });
+      var firebaseQueue = [];
+      snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; firebaseQueue.push(d); });
+      var localOnly = [];
+      for (var i = 0; i < whatsappQueue.length; i++) {
+        var lq = whatsappQueue[i];
+        var exists = false;
+        for (var j = 0; j < firebaseQueue.length; j++) { if (firebaseQueue[j].id === lq.id) { exists = true; break; } }
+        if (!exists && lq.status === 'pending') localOnly.push(lq);
+      }
+      whatsappQueue = firebaseQueue.concat(localOnly);
+      saveQueueToLocalStorage();
       updateQueueBadge(); renderWhatsappQueue(); updateDashboardQueueBanner();
     }, function(err) { console.log('WhatsApp queue listener:', err); });
   }
   firstLoadDone = true;
 }
+function mergeOfflineAccounts() {
+  if (offlineAccountsQueue.length === 0) return;
+  for (var i = 0; i < offlineAccountsQueue.length; i++) {
+    var off = offlineAccountsQueue[i];
+    var exists = false;
+    for (var j = 0; j < accounts.length; j++) {
+      if (accounts[j].createdAt === off.createdAt && accounts[j].shopId == off.shopId && accounts[j].amount == off.amount) { exists = true; break; }
+    }
+    if (!exists) { off._offlinePending = true; accounts.push(off); }
+  }
+}
 function refreshAllViews() {
   if (!currentUser) return;
-  mergeOfflineOrders(); mergeOfflineRoutes();
+  mergeOfflineOrders(); mergeOfflineRoutes(); mergeOfflineAccounts();
   renderDashboard(); renderShopkeepers(); renderRoutes(); renderHistory();
   renderRouteShopPicker(); applyDashboardLayout(); renderHiddenMenuList(); populateSalesFilters();
   renderAccounts(); renderPendingAmounts();
   var ordPage = document.getElementById('orders'); if (ordPage && ordPage.classList.contains('active')) renderOrdersPage();
   var delPage = document.getElementById('delivery'); if (delPage && delPage.classList.contains('active')) renderDelivery();
   var pm = document.getElementById('pendingShopModal'); if (pm && pm.classList.contains('active')) refreshPendingShopModal();
+  var accPage = document.getElementById('accountDetail'); if (accPage && accPage.classList.contains('active')) renderAccountDetailEntries();
 }
 function mergeOfflineOrders() {
   if (offlineOrdersQueue.length === 0) return;
@@ -454,7 +506,6 @@ function saveSettingsFirebase() {
   saveToFirebase('settings', 'products', { list: products });
   saveToFirebase('settings', 'business', { bizName: settings.bizName });
 }
-
 function confirmResetAllData() {
   if (!isAdmin()) { showToast('Sirf Admin reset kar sakta hai', 'error'); return; }
   resetConfirmStage = 0;
@@ -473,7 +524,7 @@ function proceedResetConfirm() {
     var bodyEl = document.getElementById('resetConfirmBody');
     var btnEl = document.getElementById('resetConfirmBtn');
     if (textEl) textEl.textContent = '⚠️ Aakhri baar pooch rahe hain — SAB KUCH delete ho jayega!';
-    if (bodyEl) bodyEl.innerHTML = '<p style="color:#dc2626;font-size:14px;margin:10px 0;font-weight:600;">Ye action undo nahi ho sakta. Sab permanently delete ho jayega.</p>';
+    if (bodyEl) bodyEl.innerHTML = '<p style="color:#dc2626;font-size:14px;margin:10px 0;font-weight:600;">Ye action undo nahi ho sakta.</p>';
     if (btnEl) btnEl.innerHTML = '<i class="fa fa-rotate-left"></i> Haan, Confirm Reset';
     return;
   }
@@ -500,14 +551,13 @@ function doResetAllData() {
   .then(function() { return db.collection('settings').doc('products').set({ list: [] }); })
   .then(function() {
     shopkeepers = []; orders = []; routes = []; products = []; accounts = []; whatsappQueue = [];
-    offlineOrdersQueue = []; offlineRoutesQueue = [];
-    localStorage.removeItem('whatsappQueueLocal');
+    offlineOrdersQueue = []; offlineRoutesQueue = []; offlineAccountsQueue = [];
+    localStorage.removeItem('whatsappQueueLocal'); localStorage.removeItem('offlineAccountsQueue');
     renderDashboard(); renderShopkeepers(); renderRoutes(); renderHistory(); renderSettings(); renderRouteShopPicker(); populateSalesFilters(); renderAccounts(); renderPendingAmounts(); renderWhatsappQueue();
     if (isAdmin()) renderUsers();
     showToast('✅ Saara data reset ho gaya!', 'success', 4000);
   }).catch(function(e) { console.log('Reset error:', e); showToast('❌ Reset mein masla: ' + (e.message || 'Unknown'), 'error', 5000); });
 }
-
 function loadLayouts() {
   if (currentUser && currentUser.menuLayout && Array.isArray(currentUser.menuLayout) && currentUser.menuLayout.length > 0) {
     menuLayout = currentUser.menuLayout.slice();
@@ -539,7 +589,6 @@ function saveDashboardLayout() {
   localStorage.setItem('currentUser', JSON.stringify(currentUser));
   if (firebaseReady && currentUser.id) db.collection('users').doc(String(currentUser.id)).update({ dashboardLayout: dashboardLayout }).catch(function(e) { console.log(e); });
 }
-
 function toggleMenuEdit() {
   menuEditMode = !menuEditMode;
   var panel = document.getElementById('menuEditPanel');
@@ -586,7 +635,6 @@ function resetMenuLayout() {
   menuLayout = JSON.parse(JSON.stringify(DEFAULT_MENU));
   saveMenuLayout(); renderMenuEditList(); renderHiddenMenuList(); renderSidebarNav();
 }
-
 function toggleDashboardEdit() {
   dashboardEditMode = !dashboardEditMode;
   var panel = document.getElementById('dashEditPanel');
@@ -680,7 +728,6 @@ function renderHiddenMenuList() {
   }
   list.innerHTML = html;
 }
-
 function formatWaNumber(mobile) {
   if (!mobile) return '';
   var digits = String(mobile).replace(/\D/g, '');
@@ -695,7 +742,6 @@ function formatOrderItemsText(items) {
   for (var i = 0; i < items.length; i++) { var it = items[i]; var qty = qtyText(it.maund, it.kg); lines.push('• ' + it.product + ' — ' + qty); }
   return lines.join('\n');
 }
-
 function saveToWhatsappQueue(data) {
   data.id = 'queue_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   data.createdAt = data.createdAt || new Date().toISOString();
@@ -722,9 +768,7 @@ function loadQueueFromLocalStorage() {
 }
 function updateQueueBadge() {
   var activeCount = 0;
-  for (var i = 0; i < whatsappQueue.length; i++) {
-    if (whatsappQueue[i].status === 'pending') activeCount++;
-  }
+  for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].status === 'pending') activeCount++; }
   var nav = document.getElementById('sidebarNav');
   if (nav && currentUser) renderSidebarNav();
   var dq = document.getElementById('dashboardQueueBanner');
@@ -746,10 +790,7 @@ function checkWhatsappQueueReminder() {
     if (q.status !== 'pending') continue;
     if (new Date(q.expiresAt) > now) activeCount++;
   }
-  if (activeCount > 0) {
-    currentQueueReminderCount = activeCount;
-    showQueueReminderModal(activeCount);
-  }
+  if (activeCount > 0) { currentQueueReminderCount = activeCount; showQueueReminderModal(activeCount); }
 }
 function showQueueReminderModal(count) {
   var modal = document.getElementById('whatsappQueueReminderModal');
@@ -766,27 +807,24 @@ function shareAllFromQueue(btn) {
   if (!isOnline) { showToast('📴 Internet nahi hai — phir try karein', 'warning', 3000); return; }
   if (btn) disableButton(btn, 'Opening...');
   var pending = [];
-  for (var i = 0; i < whatsappQueue.length; i++) {
-    if (whatsappQueue[i].status === 'pending') pending.push(whatsappQueue[i]);
-  }
+  for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].status === 'pending') pending.push(whatsappQueue[i]); }
   if (pending.length === 0) { if (btn) enableButton(btn); showToast('Koi pending message nahi', 'info'); return; }
   for (var i = 0; i < pending.length; i++) {
     (function(q, idx) {
       setTimeout(function() {
         var url = 'https://wa.me/' + q.mobile + '?text=' + encodeURIComponent(q.message);
-        window.open(url, '_blank');
-        q.status = 'shared';
-        q.sharedAt = new Date().toISOString();
-        if (firebaseReady) db.collection('whatsappQueue').doc(q.id).update({ status: 'shared', sharedAt: q.sharedAt }).catch(function(e) {});
-      }, idx * 1500);
+        var win = window.open(url, '_blank');
+        if (win) {
+          q.status = 'shared'; q.sharedAt = new Date().toISOString();
+          if (firebaseReady) db.collection('whatsappQueue').doc(q.id).update({ status: 'shared', sharedAt: q.sharedAt }).catch(function(e) {});
+          saveQueueToLocalStorage(); renderWhatsappQueue(); updateQueueBadge();
+        }
+      }, idx * 2500);
     })(pending[i], i);
   }
-  saveQueueToLocalStorage();
   setTimeout(function() {
     if (btn) enableButton(btn);
-    showToast('✅ ' + pending.length + ' messages WhatsApp par khul rahe hain', 'success', 3000);
-    renderWhatsappQueue();
-    updateQueueBadge();
+    showToast('✅ ' + pending.length + ' messages WhatsApp par khul rahe hain', 'success', 4000);
   }, 500);
 }
 function shareFromQueue(id) {
@@ -795,59 +833,44 @@ function shareFromQueue(id) {
   if (!q) return;
   if (!isOnline) { showToast('📴 Internet nahi hai', 'warning', 3000); return; }
   var url = 'https://wa.me/' + q.mobile + '?text=' + encodeURIComponent(q.message);
-  window.open(url, '_blank');
-  q.status = 'shared';
-  q.sharedAt = new Date().toISOString();
-  if (firebaseReady) db.collection('whatsappQueue').doc(q.id).update({ status: 'shared', sharedAt: q.sharedAt }).catch(function(e) {});
-  saveQueueToLocalStorage();
-  renderWhatsappQueue();
-  updateQueueBadge();
-  showToast('✅ Message WhatsApp par khul gaya', 'success');
+  var win = window.open(url, '_blank');
+  if (win) {
+    q.status = 'shared'; q.sharedAt = new Date().toISOString();
+    if (firebaseReady) db.collection('whatsappQueue').doc(q.id).update({ status: 'shared', sharedAt: q.sharedAt }).catch(function(e) {});
+    saveQueueToLocalStorage(); renderWhatsappQueue(); updateQueueBadge();
+    showToast('✅ Message WhatsApp par khul gaya', 'success');
+  } else { showToast('⚠️ Popup block ho gaya — browser mein allow karein', 'warning', 4000); }
 }
 function deleteFromQueue(id) {
   if (!confirm('Ye message queue se delete karein?')) return;
   var newQueue = [];
   for (var i = 0; i < whatsappQueue.length; i++) {
-    if (whatsappQueue[i].id === id) {
-      if (firebaseReady) db.collection('whatsappQueue').doc(id).delete().catch(function(e) {});
-    } else newQueue.push(whatsappQueue[i]);
+    if (whatsappQueue[i].id === id) { if (firebaseReady) db.collection('whatsappQueue').doc(id).delete().catch(function(e) {}); }
+    else newQueue.push(whatsappQueue[i]);
   }
   whatsappQueue = newQueue;
-  saveQueueToLocalStorage();
-  renderWhatsappQueue();
-  updateQueueBadge();
+  saveQueueToLocalStorage(); renderWhatsappQueue(); updateQueueBadge();
   showToast('Message delete ho gaya', 'info');
 }
 function cleanupOldQueue() {
-  var now = new Date();
-  var newQueue = [];
-  var deleted = 0;
+  var now = new Date(); var newQueue = []; var deleted = 0;
   for (var i = 0; i < whatsappQueue.length; i++) {
     var q = whatsappQueue[i];
-    if (q.deleteAt && new Date(q.deleteAt) < now) {
-      if (firebaseReady) db.collection('whatsappQueue').doc(q.id).delete().catch(function(e) {});
-      deleted++;
-    } else newQueue.push(q);
+    if (q.deleteAt && new Date(q.deleteAt) < now) { if (firebaseReady) db.collection('whatsappQueue').doc(q.id).delete().catch(function(e) {}); deleted++; }
+    else newQueue.push(q);
   }
-  if (deleted > 0) {
-    whatsappQueue = newQueue;
-    saveQueueToLocalStorage();
-    updateQueueBadge();
-  }
+  if (deleted > 0) { whatsappQueue = newQueue; saveQueueToLocalStorage(); updateQueueBadge(); }
 }
 function renderWhatsappQueue() {
   var list = document.getElementById('queueList');
   if (!list) return;
   var badge = document.getElementById('queueCountBadge');
   var active = [];
-  for (var i = 0; i < whatsappQueue.length; i++) {
-    if (whatsappQueue[i].status === 'pending') active.push(whatsappQueue[i]);
-  }
+  for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].status === 'pending') active.push(whatsappQueue[i]); }
   if (badge) badge.textContent = active.length;
   if (active.length === 0) { list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Koi pending message nahi</div>'; return; }
   active.sort(function(a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
-  var html = '';
-  var now = new Date();
+  var html = ''; var now = new Date();
   for (var i = 0; i < active.length; i++) {
     var q = active[i];
     var typeIcon = '📦'; var typeClass = 'type-order';
@@ -868,7 +891,6 @@ function renderWhatsappQueue() {
   }
   list.innerHTML = html;
 }
-
 function getShopTotalKhata(shopId) {
   var total = 0;
   for (var i = 0; i < accounts.length; i++) {
@@ -973,14 +995,22 @@ function renderAccountDetailEntries() {
     var label = e.type === 'order' ? 'Order: ' + (e.productName || '') : 'Wasooli';
     var sign = e.type === 'order' ? '+' : '-';
     var cls = e.type === 'order' ? 'plus' : 'minus';
+    var offlineTag = e._offlinePending ? ' <span style="background:#f59e0b;color:#fff;font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700;">⏳</span>' : '';
+    var actionsHtml = '';
+    if (e.type === 'payment') {
+      actionsHtml = '<div style="display:flex;gap:6px;margin-top:6px;">' +
+        '<button class="btn small" onclick="openEditWasooliModal(\'' + e.id + '\')" style="padding:5px 10px;font-size:11px;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;"><i class="fa fa-edit"></i> Edit</button>' +
+        '<button class="btn small danger" onclick="openDeleteWasooliModal(\'' + e.id + '\')" style="padding:5px 10px;font-size:11px;"><i class="fa fa-trash"></i> Delete</button>' +
+      '</div>';
+    }
     html += '<div class="khata-entry ' + e.type + '">' +
-      '<div class="ke-date">' + formatDateTimeObj(new Date(e.createdAt)) + '</div>' +
+      '<div class="ke-date">' + formatDateTimeObj(new Date(e.createdAt)) + offlineTag + '</div>' +
       '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">' +
         '<span style="font-weight:600;color:#1e293b;">' + icon + ' ' + label + '</span>' +
         '<span class="ke-amount ' + cls + '" style="font-weight:800;font-size:16px;">' + sign + ' ' + formatRs(e.amount) + '</span>' +
       '</div>' +
       (e.note ? '<div style="font-size:12px;color:#64748b;margin-top:4px;">📝 ' + e.note + '</div>' : '') +
-    '</div>';
+      actionsHtml + '</div>';
   }
   box.innerHTML = html;
 }
@@ -990,10 +1020,8 @@ function openWasooliModal() {
   if (!shop) return;
   var nameEl = document.getElementById('wasooliShopName');
   if (nameEl) nameEl.textContent = shop.name + ' — ' + shop.mobile;
-  var amtEl = document.getElementById('wasooliAmount');
-  var noteEl = document.getElementById('wasooliNote');
-  if (amtEl) amtEl.value = '';
-  if (noteEl) noteEl.value = '';
+  var amtEl = document.getElementById('wasooliAmount'); var noteEl = document.getElementById('wasooliNote');
+  if (amtEl) amtEl.value = ''; if (noteEl) noteEl.value = '';
   document.getElementById('wasooliModal').classList.add('active');
   setTimeout(function() { if (amtEl) amtEl.focus(); }, 200);
 }
@@ -1007,63 +1035,153 @@ function saveWasooli(btn) {
   var entry = {
     shopId: currentAccountShopId, type: 'payment', amount: amount, note: note,
     date: todayStr(), createdAt: new Date().toISOString(),
-    createdBy: currentUser ? currentUser.user : 'unknown'
+    createdBy: currentUser ? currentUser.user : 'unknown',
+    id: 'local_acc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+    _offlinePending: !isOnline
   };
-  if (firebaseReady) {
-    db.collection('accounts').add(entry).then(function() {
-      if (btn) enableButton(btn);
-      closeWasooliModal();
+  accounts.push(entry);
+  if (!isOnline) { offlineAccountsQueue.push(entry); saveAccountsQueueToLocalStorage(); }
+  if (firebaseReady && isOnline) {
+    var firebaseEntry = JSON.parse(JSON.stringify(entry));
+    delete firebaseEntry.id; delete firebaseEntry._offlinePending;
+    db.collection('accounts').add(firebaseEntry).then(function(ref) {
+      entry.id = ref.id; entry._offlinePending = false;
+      if (btn) enableButton(btn); closeWasooliModal();
       showToast('✅ Wasooli save ho gayi', 'success');
       renderAccountDetailEntries();
       var totalEl = document.getElementById('accountDetailTotal');
       if (totalEl) totalEl.textContent = formatRs(getShopTotalKhata(currentAccountShopId));
-    }).catch(function(e) { if (btn) enableButton(btn); showToast('❌ ' + e.message, 'error'); });
+    }).catch(function(e) {
+      if (btn) enableButton(btn); closeWasooliModal();
+      showToast('⚠️ Offline save — internet aane par sync hoga', 'warning');
+      renderAccountDetailEntries();
+    });
   } else {
-    if (btn) enableButton(btn);
-    entry.id = 'local_' + Date.now();
-    accounts.push(entry);
-    closeWasooliModal();
-    showToast('✅ Wasooli save (local)', 'success');
+    if (btn) enableButton(btn); closeWasooliModal();
+    showToast(isOnline ? '✅ Wasooli save ho gayi' : '📴 Offline — internet aane par sync hoga', isOnline ? 'success' : 'warning', 3000);
+    renderAccountDetailEntries();
+    var totalEl = document.getElementById('accountDetailTotal');
+    if (totalEl) totalEl.textContent = formatRs(getShopTotalKhata(currentAccountShopId));
+  }
+}
+function openEditWasooliModal(entryId) {
+  var entry = null;
+  for (var i = 0; i < accounts.length; i++) { if (accounts[i].id === entryId) { entry = accounts[i]; break; } }
+  if (!entry) return;
+  currentEditingWasooliId = entryId;
+  var amountEl = document.getElementById('editWasooliAmount'); var noteEl = document.getElementById('editWasooliNote');
+  if (amountEl) amountEl.value = entry.amount || 0;
+  if (noteEl) noteEl.value = entry.note || '';
+  document.getElementById('editWasooliModal').classList.add('active');
+  setTimeout(function() { if (amountEl) amountEl.focus(); }, 200);
+}
+function closeEditWasooliModal() { document.getElementById('editWasooliModal').classList.remove('active'); currentEditingWasooliId = null; }
+function saveEditedWasooli(btn) {
+  if (!currentEditingWasooliId) return;
+  var amount = parseInt(document.getElementById('editWasooliAmount').value) || 0;
+  var note = document.getElementById('editWasooliNote').value.trim();
+  if (amount <= 0) { showToast('Amount daalein', 'warning'); return; }
+  if (btn) disableButton(btn, 'Updating...');
+  var entry = null;
+  for (var i = 0; i < accounts.length; i++) { if (accounts[i].id === currentEditingWasooliId) { entry = accounts[i]; break; } }
+  if (!entry) { closeEditWasooliModal(); if (btn) enableButton(btn); return; }
+  entry.amount = amount; entry.note = note;
+  entry.updatedAt = new Date().toISOString();
+  entry.updatedBy = currentUser ? currentUser.user : 'unknown';
+  if (firebaseReady && isOnline && String(entry.id).indexOf('local_') !== 0) {
+    db.collection('accounts').doc(String(entry.id)).update({ amount: amount, note: note, updatedAt: entry.updatedAt, updatedBy: entry.updatedBy }).then(function() {
+      if (btn) enableButton(btn); closeEditWasooliModal();
+      showToast('✅ Wasooli update ho gayi', 'success');
+      renderAccountDetailEntries();
+      var totalEl = document.getElementById('accountDetailTotal');
+      if (totalEl) totalEl.textContent = formatRs(getShopTotalKhata(currentAccountShopId));
+    }).catch(function(e) {
+      if (btn) enableButton(btn); closeEditWasooliModal();
+      showToast('⚠️ Update local save', 'warning');
+      renderAccountDetailEntries();
+    });
+  } else {
+    for (var i = 0; i < offlineAccountsQueue.length; i++) {
+      if (offlineAccountsQueue[i].id === entry.id) { offlineAccountsQueue[i].amount = amount; offlineAccountsQueue[i].note = note; break; }
+    }
+    saveAccountsQueueToLocalStorage();
+    if (btn) enableButton(btn); closeEditWasooliModal();
+    showToast('✅ Wasooli update (offline)', 'success');
     renderAccountDetailEntries();
   }
+}
+function openDeleteWasooliModal(entryId) {
+  var entry = null;
+  for (var i = 0; i < accounts.length; i++) { if (accounts[i].id === entryId) { entry = accounts[i]; break; } }
+  if (!entry) return;
+  currentDeletingWasooliId = entryId;
+  var infoEl = document.getElementById('deleteWasooliInfo');
+  if (infoEl) infoEl.textContent = 'Amount: ' + formatRs(entry.amount) + (entry.note ? ' — ' + entry.note : '');
+  document.getElementById('deleteWasooliModal').classList.add('active');
+}
+function closeDeleteWasooliModal() { document.getElementById('deleteWasooliModal').classList.remove('active'); currentDeletingWasooliId = null; }
+function confirmDeleteWasooli(btn) {
+  if (!currentDeletingWasooliId) return;
+  if (btn) disableButton(btn, 'Deleting...');
+  var entryId = currentDeletingWasooliId;
+  var newAccounts = [];
+  for (var i = 0; i < accounts.length; i++) {
+    if (accounts[i].id === entryId) {
+      if (firebaseReady && isOnline && String(accounts[i].id).indexOf('local_') !== 0) {
+        db.collection('accounts').doc(String(accounts[i].id)).delete().catch(function(e) { console.log(e); });
+      }
+    } else newAccounts.push(accounts[i]);
+  }
+  accounts = newAccounts;
+  var newOfflineQ = [];
+  for (var i = 0; i < offlineAccountsQueue.length; i++) { if (offlineAccountsQueue[i].id !== entryId) newOfflineQ.push(offlineAccountsQueue[i]); }
+  offlineAccountsQueue = newOfflineQ;
+  saveAccountsQueueToLocalStorage();
+  setTimeout(function() {
+    if (btn) enableButton(btn); closeDeleteWasooliModal();
+    showToast('✅ Wasooli delete ho gayi', 'success');
+    renderAccountDetailEntries();
+    var totalEl = document.getElementById('accountDetailTotal');
+    if (totalEl) totalEl.textContent = formatRs(getShopTotalKhata(currentAccountShopId));
+  }, 200);
 }
 function addToAccount(shopId, amount, type, orderId, productName, note) {
   var entry = {
     shopId: shopId, type: type, amount: parseInt(amount) || 0,
     orderId: orderId || '', productName: productName || '', note: note || '',
     date: todayStr(), createdAt: new Date().toISOString(),
-    createdBy: currentUser ? currentUser.user : 'unknown'
+    createdBy: currentUser ? currentUser.user : 'unknown',
+    id: 'local_acc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+    _offlinePending: !isOnline
   };
-  if (firebaseReady) {
-    db.collection('accounts').add(entry).catch(function(e) { console.log('Account add error:', e); });
-  } else {
-    entry.id = 'local_acc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-    accounts.push(entry);
+  accounts.push(entry);
+  if (!isOnline) { offlineAccountsQueue.push(entry); saveAccountsQueueToLocalStorage(); }
+  else if (firebaseReady) {
+    var firebaseEntry = JSON.parse(JSON.stringify(entry));
+    delete firebaseEntry.id; delete firebaseEntry._offlinePending;
+    db.collection('accounts').add(firebaseEntry).then(function(ref) {
+      entry.id = ref.id; entry._offlinePending = false;
+    }).catch(function(e) { console.log('Account add error:', e); });
   }
 }
-
-// ✅ NAYA HELPER: Order deliver hone par account mein amount add karo (sirf ek baar)
 function addOrderAmountToAccountIfNeeded(order) {
   if (!order || !order.shopId) return;
   var shop = getShopById(order.shopId);
   if (!shop) return;
-  var isFarziOrder = shop.category === 'farzi';
-  if (isFarziOrder) return; // Farzi ka amount account mein add nahi hota
-  if (order.status !== 'Delivered') return; // Sirf delivered order ka amount
-  if (order.amountAddedToAccount) return; // Pehle add ho chuka hai
+  if (shop.category === 'farzi') return;
+  if (order.status !== 'Delivered') return;
+  if (order.amountAddedToAccount) return;
   var totalAmt = parseInt(order.totalAmount) || 0;
   if (totalAmt <= 0) return;
   for (var i = 0; i < order.items.length; i++) {
     var itm = order.items[i];
-    if (itm.amount && itm.amount > 0) {
-      addToAccount(order.shopId, itm.amount, 'order', order.id, itm.product);
-    }
+    if (itm.amount && itm.amount > 0) { addToAccount(order.shopId, itm.amount, 'order', order.id, itm.product); }
   }
   order.amountAddedToAccount = true;
-  saveToFirebase('orders', order.id, order);
-}
-
-function openAmountModal() {
+  if (firebaseReady && isOnline && String(order.id).indexOf('local_') !== 0) {
+    db.collection('orders').doc(String(order.id)).update({ amountAddedToAccount: true }).catch(function(e) { console.log(e); });
+  }
+}function openAmountModal() {
   if (currentOrderItems.length === 0) return;
   var list = document.getElementById('amountItemsList');
   var html = '';
@@ -1078,15 +1196,9 @@ function openAmountModal() {
   if (list) list.innerHTML = html;
   updateAmountTotal();
   document.getElementById('amountModal').classList.add('active');
-  setTimeout(function() {
-    var firstInput = document.querySelector('.amount-input');
-    if (firstInput) firstInput.focus();
-  }, 300);
+  setTimeout(function() { var firstInput = document.querySelector('.amount-input'); if (firstInput) firstInput.focus(); }, 300);
 }
-function closeAmountModal() {
-  document.getElementById('amountModal').classList.remove('active');
-  pendingOrderForAmount = null;
-}
+function closeAmountModal() { document.getElementById('amountModal').classList.remove('active'); pendingOrderForAmount = null; }
 function updateAmountTotal() {
   var inputs = document.querySelectorAll('.amount-input');
   var total = 0;
@@ -1095,20 +1207,13 @@ function updateAmountTotal() {
   if (el) el.textContent = formatRs(total);
 }
 function saveOrderWithAmount(btn) {
-  if (!currentOrderItems || currentOrderItems.length === 0) {
-    showToast('Koi product nahi', 'error');
-    return;
-  }
+  if (!currentOrderItems || currentOrderItems.length === 0) { showToast('Koi product nahi', 'error'); return; }
   var inputs = document.querySelectorAll('.amount-input');
   var amounts = [];
   for (var i = 0; i < inputs.length; i++) { amounts.push(parseInt(inputs[i].value) || 0); }
   for (var i = 0; i < currentOrderItems.length; i++) { currentOrderItems[i].amount = amounts[i] || 0; }
   if (btn) disableButton(btn, 'Saving...');
-  setTimeout(function() {
-    closeAmountModal();
-    if (btn) enableButton(btn);
-    saveMultiOrderActual();
-  }, 200);
+  setTimeout(function() { closeAmountModal(); if (btn) enableButton(btn); saveMultiOrderActual(); }, 200);
 }
 function saveMultiOrderActual() {
   if (isSavingOrder) { console.log('Already saving, skip'); return; }
@@ -1116,8 +1221,7 @@ function saveMultiOrderActual() {
   if (currentOrderItems.length === 0) { showToast('Koi product nahi', 'error'); return; }
   if (!firebaseReady) { showToast('Firebase load nahi hua', 'error'); return; }
   isSavingOrder = true;
-  var shopId = selectedShopIdForOrder;
-  var date = todayStr();
+  var shopId = selectedShopIdForOrder; var date = todayStr();
   var notes = document.getElementById('orderNotes') ? document.getElementById('orderNotes').value.trim() : '';
   var items = []; var totalKg = 0; var totalAmount = 0;
   for (var i = 0; i < currentOrderItems.length; i++) {
@@ -1131,8 +1235,7 @@ function saveMultiOrderActual() {
     shopId: shopId, items: items, totalKg: totalKg, totalAmount: totalAmount,
     date: date, notes: notes, status: 'Pending',
     createdBy: currentUser ? currentUser.user : 'unknown',
-    createdAt: new Date().toISOString(),
-    amountAddedToAccount: false  // ✅ NAYA: track karne ke liye
+    createdAt: new Date().toISOString(), amountAddedToAccount: false
   };
   var shop = getShopById(shopId);
   var wasOffline = !isOnline;
@@ -1140,31 +1243,25 @@ function saveMultiOrderActual() {
   if (isFarzi) newOrder.amountStatus = 'pending';
   newOrder.id = 'local_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   newOrder._offlinePending = wasOffline;
-  // ✅ Order save — ab amount account mein add NAHI hoga
   db.collection('orders').add({
     shopId: newOrder.shopId, items: newOrder.items, totalKg: newOrder.totalKg,
     totalAmount: newOrder.totalAmount, date: newOrder.date, notes: newOrder.notes,
     status: newOrder.status, createdBy: newOrder.createdBy, createdAt: newOrder.createdAt,
-    amountStatus: newOrder.amountStatus || null,
-    amountAddedToAccount: false
+    amountStatus: newOrder.amountStatus || null, amountAddedToAccount: false
   }).then(function(ref) {
-    newOrder.id = ref.id;
-    newOrder._offlinePending = false;
+    newOrder.id = ref.id; newOrder._offlinePending = false;
   }).catch(function(e) {
     console.log('Order add error:', e);
     showToast('❌ Order save nahi ho saka: ' + (e.message || 'Unknown'), 'error', 4000);
   });
   offlineOrdersQueue.push(newOrder);
   setTimeout(function() {
-    mergeOfflineOrders();
-    isSavingOrder = false;
+    mergeOfflineOrders(); isSavingOrder = false;
     showToast(wasOffline ? '📴 Offline — order local save' : '✅ Order save ho gaya!', wasOffline ? 'warning' : 'success', 4000);
-    prepareOrderForm();
-    showPage('dashboard');
+    prepareOrderForm(); showPage('dashboard');
     if (shop && shop.mobile) { openWhatsappShareModal(newOrder, shop); }
   }, 400);
 }
-
 function getFarziPendingTotal(shopId) {
   var total = 0;
   for (var i = 0; i < orders.length; i++) {
@@ -1251,8 +1348,7 @@ function renderFarziDetailOrders(shopId) {
       '<div style="text-align:right;">' +
         '<div class="por-amount">' + formatRs(o.totalAmount) + '</div>' +
         '<button class="btn-paid" onclick="markPendingPaid(\'' + o.id + '\')"><i class="fa fa-check"></i> De Diya</button>' +
-      '</div>' +
-    '</div>';
+      '</div></div>';
   }
   box.innerHTML = html;
 }
@@ -1273,10 +1369,7 @@ function markPendingPaid(orderId) {
   if (totalEl) totalEl.textContent = formatRs(getFarziPendingTotal(order.shopId));
   renderPendingAmounts();
 }
-function closeFarziDeliverModal() {
-  document.getElementById('farziDeliverModal').classList.remove('active');
-  currentFarziDeliverOrderId = null;
-}
+function closeFarziDeliverModal() { document.getElementById('farziDeliverModal').classList.remove('active'); currentFarziDeliverOrderId = null; }
 function openFarziDeliverModal(orderId) {
   var order = null;
   for (var i = 0; i < orders.length; i++) { if (orders[i].id == orderId) { order = orders[i]; break; } }
@@ -1298,16 +1391,14 @@ function markFarziDelivered(status, btn) {
   for (var i = 0; i < orders.length; i++) { if (orders[i].id == orderId) { order = orders[i]; break; } }
   if (!order) { closeFarziDeliverModal(); if (btn) enableButton(btn); return; }
   if (status === 'paid') {
-    order.amountStatus = 'paid';
-    order.paidAt = new Date().toISOString();
+    order.amountStatus = 'paid'; order.paidAt = new Date().toISOString();
     order.paidBy = currentUser ? currentUser.user : 'unknown';
   } else { order.amountStatus = 'pending'; }
   if (firebaseReady) {
     db.collection('orders').doc(String(order.id)).update({ amountStatus: order.amountStatus, paidAt: order.paidAt || null, paidBy: order.paidBy || null }).catch(function(e) { console.log(e); });
   }
   setTimeout(function() {
-    if (btn) enableButton(btn);
-    closeFarziDeliverModal();
+    if (btn) enableButton(btn); closeFarziDeliverModal();
     showToast(status === 'paid' ? '✅ Amount paid mark' : '⏳ Pending mein daala', 'success');
     renderPendingAmounts(); renderDashboard();
   }, 200);
@@ -1319,7 +1410,6 @@ function filterShopkeepers(category, btn) {
   if (btn) btn.classList.add('active');
   renderShopkeepers();
 }
-
 function openWhatsappShareModal(order, shop) {
   if (!shop || !shop.mobile) return;
   var number = formatWaNumber(shop.mobile); if (!number) return;
@@ -1353,11 +1443,7 @@ function openWhatsappDeliveredShareModal(order, shop) {
   var itemsText = lines.join('\n');
   var totalAmtText = order.totalAmount ? '\n\n💰 Total Amount: ' + formatRs(order.totalAmount) : '';
   var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n📅 ' + getCurrentDateTimeText() + '\n\nAap ka order deliver ho chuka hai:\n\n' + itemsText + totalAmtText + '\n\nShukriya!\n- ' + bizName + '\n\n👤 Delivered by: ' + getCurrentUserDisplayForWa();
-  if (!isOnline) {
-    saveToWhatsappQueue({ message: msg, mobile: number, shopName: shop.name, type: 'delivery' });
-    showToast('📴 Offline — queue mein save', 'warning');
-    return;
-  }
+  if (!isOnline) { saveToWhatsappQueue({ message: msg, mobile: number, shopName: shop.name, type: 'delivery' }); showToast('📴 Offline — queue mein save', 'warning'); return; }
   var url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(msg);
   pendingWhatsappUrl = url; pendingWhatsappMessage = msg;
   var modal = document.getElementById('whatsappShareModal');
@@ -1380,11 +1466,7 @@ function openWhatsappMultiDeliveredShareModal(items, shop) {
   }
   var itemsText = lines.join('\n');
   var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n📅 ' + getCurrentDateTimeText() + '\n\nAap ka order deliver ho chuka hai:\n\n' + itemsText + '\n\nShukriya!\n- ' + bizName + '\n\n👤 Delivered by: ' + getCurrentUserDisplayForWa();
-  if (!isOnline) {
-    saveToWhatsappQueue({ message: msg, mobile: number, shopName: shop.name, type: 'delivery' });
-    showToast('📴 Offline — queue mein save', 'warning');
-    return;
-  }
+  if (!isOnline) { saveToWhatsappQueue({ message: msg, mobile: number, shopName: shop.name, type: 'delivery' }); showToast('📴 Offline — queue mein save', 'warning'); return; }
   var url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(msg);
   pendingWhatsappUrl = url; pendingWhatsappMessage = msg;
   var modal = document.getElementById('whatsappShareModal');
@@ -1401,8 +1483,7 @@ function openWhatsappEditShareModal(order, shop, oldItems, newItems) {
     var oi = oldItems[i]; var found = false;
     for (var j = 0; j < newItems.length; j++) {
       if (newItems[j].product === oi.product) {
-        var oldQty = qtyText(oi.maund, oi.kg);
-        var newQty = qtyText(newItems[j].maund, newItems[j].kg);
+        var oldQty = qtyText(oi.maund, oi.kg); var newQty = qtyText(newItems[j].maund, newItems[j].kg);
         if (oldQty === newQty) tableLines.push('• ' + oi.product + ' — ' + oldQty);
         else { tableLines.push('❌ ' + oi.product + ' — ' + oldQty); tableLines.push('✅ ' + oi.product + ' — ' + newQty); }
         found = true; break;
@@ -1418,11 +1499,7 @@ function openWhatsappEditShareModal(order, shop, oldItems, newItems) {
   var tableText = tableLines.join('\n');
   var originalDateTime = getOrderDateTimeText(order);
   var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n📅 ' + getCurrentDateTimeText() + '\n\nAap ne is tarikh (' + originalDateTime + ') ko yeh order diya tha, aur yeh ismein tabdeeli ki gayi hai:\n\n' + tableText + '\n\nShukriya!\n- ' + bizName + '\n\n👤 Updated by: ' + getCurrentUserDisplayForWa();
-  if (!isOnline) {
-    saveToWhatsappQueue({ message: msg, mobile: number, shopName: shop.name, type: 'edit' });
-    showToast('📴 Offline — queue mein save', 'warning');
-    return;
-  }
+  if (!isOnline) { saveToWhatsappQueue({ message: msg, mobile: number, shopName: shop.name, type: 'edit' }); showToast('📴 Offline — queue mein save', 'warning'); return; }
   var url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(msg);
   pendingWhatsappUrl = url; pendingWhatsappMessage = msg;
   var modal = document.getElementById('whatsappShareModal');
@@ -1437,11 +1514,7 @@ function openWhatsappCancelShareModal(order, shop) {
   var itemsText = formatOrderItemsText(order.items);
   var originalDateTime = getOrderDateTimeText(order);
   var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n📅 ' + getCurrentDateTimeText() + '\n\nAap ne is tarikh (' + originalDateTime + ') ko yeh order diya tha, aur yeh cancel ho gaya hai:\n\n' + itemsText + '\n\nShukriya!\n- ' + bizName + '\n\n👤 Cancelled by: ' + getCurrentUserDisplayForWa();
-  if (!isOnline) {
-    saveToWhatsappQueue({ message: msg, mobile: number, shopName: shop.name, type: 'cancel' });
-    showToast('📴 Offline — queue mein save', 'warning');
-    return;
-  }
+  if (!isOnline) { saveToWhatsappQueue({ message: msg, mobile: number, shopName: shop.name, type: 'cancel' }); showToast('📴 Offline — queue mein save', 'warning'); return; }
   var url = 'https://wa.me/' + number + '?text=' + encodeURIComponent(msg);
   pendingWhatsappUrl = url; pendingWhatsappMessage = msg;
   var modal = document.getElementById('whatsappShareModal');
@@ -1459,7 +1532,6 @@ function confirmWhatsappShare() {
   closeWhatsappShareModal();
 }
 function getShopById(shopId) { for (var i = 0; i < shopkeepers.length; i++) { if (shopkeepers[i].id == shopId) return shopkeepers[i]; } return null; }
-
 function cleanupRouteAfterDelivery() {
   if (!firebaseReady) return;
   var routesChanged = false;
@@ -1489,7 +1561,6 @@ function cleanupRouteAfterDelivery() {
   }
   if (routesChanged) { renderRoutes(); renderDashboardRoutes(); }
 }
-
 function autoShiftPendingOrders() {
   if (!firebaseReady) return;
   var today = todayStr(); var shifted = 0;
@@ -1501,7 +1572,6 @@ function autoShiftPendingOrders() {
   }
   if (shifted > 0) console.log(shifted + ' pending orders shifted');
 }
-
 function goBack() {
   var activePage = document.querySelector('.page.active');
   if (!activePage) return;
@@ -1521,7 +1591,6 @@ function goHome() {
   if (activePage && activePage.id === 'dashboard') return;
   showPage('dashboard'); history.pushState({ page: 'dashboard' }, '');
 }
-
 function showPinScreen() { showPinScreenOnly(); }
 function verifyPin() {
   var entered = document.getElementById('pinInput').value.trim();
@@ -1542,15 +1611,13 @@ function pinForgot() {
   localStorage.setItem('isLoggedIn', 'false'); localStorage.removeItem('currentUser');
   currentUser = null; isLoggedIn = false;
   showLoginScreenOnly();
-  document.getElementById('loginUser').value = '';
-  document.getElementById('loginPass').value = '';
+  document.getElementById('loginUser').value = ''; document.getElementById('loginPass').value = '';
 }
 function promptPinSetup() { if (currentUser && currentUser.pin) return; document.getElementById('pinSetupBanner').style.display = 'block'; }
 function hidePinBanner() { document.getElementById('pinSetupBanner').style.display = 'none'; }
 function openPinSetup() {
   document.getElementById('pinSetupTitle').textContent = 'PIN Set Karein';
-  document.getElementById('newPin1').value = '';
-  document.getElementById('newPin2').value = '';
+  document.getElementById('newPin1').value = ''; document.getElementById('newPin2').value = '';
   document.getElementById('pinSetupError').textContent = '';
   document.getElementById('pinSetupModal').classList.add('active');
   setTimeout(function() { document.getElementById('newPin1').focus(); }, 200);
@@ -1595,7 +1662,6 @@ function renderPinSettings() {
     if (remBtn) remBtn.style.display = 'none';
   }
 }
-
 function isAdmin() { return currentUser && currentUser.isAdmin === true; }
 function can(permission) {
   if (!currentUser) return false;
@@ -1603,7 +1669,6 @@ function can(permission) {
   if (!currentUser.perms) return false;
   return currentUser.perms[permission] === true;
 }
-
 function doSignup() {
   var user = document.getElementById('signupUser').value.trim();
   var pass = document.getElementById('signupPass').value;
@@ -1634,7 +1699,6 @@ function doSignup() {
     }).catch(function(e) { err.textContent = 'Error: ' + e.message; });
   }).catch(function(e) { err.textContent = 'Error: ' + e.message; });
 }
-
 function doLogin() {
   var user = document.getElementById('loginUser').value.trim();
   var pass = document.getElementById('loginPass').value;
@@ -1704,8 +1768,9 @@ function showApp() {
   updateOnlineStatus();
   if (firebaseReady) { setupRealtimeListeners(); setTimeout(function() { autoShiftPendingOrders(); renderDashboard(); }, 1500); }
   initBackButtonHandling();
+  loadAccountsQueueFromLocalStorage();
+  setTimeout(function() { if (isOnline) syncOfflineAccountsQueue(); }, 2000);
 }
-
 function manualSync() {
   if (!firebaseReady) { alert('Firebase load nahi hua.'); return; }
   if (!isOnline) { alert('Internet nahi hai.'); return; }
@@ -1716,13 +1781,12 @@ function manualSync() {
   for (var key in snapshotListeners) { if (snapshotListeners[key]) { try { snapshotListeners[key](); } catch (e) {} } }
   snapshotListeners = {};
   setTimeout(function() {
-    setupRealtimeListeners(); autoShiftPendingOrders();
+    setupRealtimeListeners(); autoShiftPendingOrders(); syncOfflineAccountsQueue();
     if (icon) icon.className = 'fa fa-sync-alt';
     if (btn) btn.disabled = false;
     showToast('✅ Sync ho gaya!', 'success', 2000);
   }, 600);
 }
-
 function renderSidebarNav() {
   var nav = document.getElementById('sidebarNav');
   if (!nav || !menuLayout) return;
@@ -1757,7 +1821,6 @@ function renderSidebarNav() {
     roleEl.className = 'user-role' + (currentUser.isAdmin ? ' admin' : '');
   }
 }
-
 function todayStr() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function formatDate(s) { if (!s) return ''; var d = new Date(s + 'T00:00:00'); return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
 function formatDateLong(s) { var d = new Date(s + 'T00:00:00'); return d.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }); }
@@ -1791,7 +1854,6 @@ function checkOrderDelivered(order) {
   }
   return true;
 }
-
 function showPage(pageId, btn) {
   if (pageId === 'neworder' && !can('newOrder')) { alert('Permission nahi hai'); return; }
   if (pageId === 'shopkeepers' && !can('shopkeepers')) { alert('Permission nahi hai'); return; }
@@ -1800,27 +1862,21 @@ function showPage(pageId, btn) {
   if (pageId === 'users' && !isAdmin()) { alert('Sirf Admin'); return; }
   if (pageId === 'routes' && !can('routes')) { alert('Permission nahi hai'); return; }
   if ((pageId === 'accounts' || pageId === 'accountDetail' || pageId === 'pendingAmount' || pageId === 'farziCustomerDetail') && !can('accounts')) { alert('Permission nahi hai'); return; }
-
   var pages = document.querySelectorAll('.page');
   for (var i = 0; i < pages.length; i++) pages[i].classList.remove('active');
   var target = document.getElementById(pageId); if (target) target.classList.add('active');
-
   var navBtns = document.querySelectorAll('.nav-btn');
   for (var j = 0; j < navBtns.length; j++) navBtns[j].classList.remove('active');
   if (btn) btn.classList.add('active');
-
   var sb = document.getElementById('sidebar'); if (sb) sb.classList.remove('open');
-
   if (menuEditMode) {
     menuEditMode = false;
     document.getElementById('menuEditPanel').style.display = 'none';
     document.getElementById('sidebarNav').style.display = 'flex';
     document.getElementById('editMenuBtn').innerHTML = '<i class="fa fa-pen"></i> Edit Menu';
   }
-
   history.pushState({ page: pageId }, '');
-
-  if (pageId === 'dashboard') { mergeOfflineOrders(); mergeOfflineRoutes(); renderDashboard(); applyDashboardLayout(); updateDashboardQueueBanner(); }
+  if (pageId === 'dashboard') { mergeOfflineOrders(); mergeOfflineRoutes(); mergeOfflineAccounts(); renderDashboard(); applyDashboardLayout(); updateDashboardQueueBanner(); }
   if (pageId === 'shopkeepers') renderShopkeepers();
   if (pageId === 'neworder') prepareOrderForm();
   if (pageId === 'orders') { var dEl = document.getElementById('ordersDate'); if (dEl && !dEl.value) dEl.value = todayStr(); mergeOfflineOrders(); renderOrdersPage(); }
@@ -1834,7 +1890,6 @@ function showPage(pageId, btn) {
   if (pageId === 'whatsappQueue') renderWhatsappQueue();
   window.scrollTo(0, 0);
 }
-
 function applySettings() {
   var t1 = document.getElementById('topbarTitle');
   var t2 = document.getElementById('sidebarTitle');
@@ -1879,7 +1934,6 @@ function deleteProduct(i) {
   renderProductsList(); renderProductPickerGrid(); populateSalesFilters();
   showToast('Product delete ho gaya', 'info');
 }
-
 function saveUser(btn) {
   if (!isAdmin()) { showToast('Sirf Admin', 'error'); return; }
   var id = document.getElementById('userId').value;
@@ -2002,7 +2056,6 @@ function renderUsers() {
   }
   list.innerHTML = html;
 }
-
 function renderDashboard() {
   var today = todayStr();
   var dateLabel = document.getElementById('todayDateLabel');
@@ -2084,7 +2137,6 @@ function renderPendingShopkeeperList() {
   }
   list.innerHTML = html;
 }
-
 function openPendingShopModal(shopId) {
   var today = todayStr();
   var shopName = 'Unknown', shopMobile = '';
@@ -2182,7 +2234,6 @@ function deliverSelectedItems(btn) {
       }
       order.status = checkOrderDelivered(order) ? 'Delivered' : 'Partial';
       saveToFirebase('orders', order.id, order);
-      // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
       addOrderAmountToAccountIfNeeded(order);
       if (isFarziShop && order.status === 'Delivered' && deliveredOrderIds.indexOf(order.id) === -1) deliveredOrderIds.push(order.id);
     }
@@ -2192,11 +2243,8 @@ function deliverSelectedItems(btn) {
     if (btn) enableButton(btn);
     cleanupRouteAfterDelivery(); refreshPendingShopModal();
     showToast('✅ Delivered mark ho gaya!', 'success');
-    if (isFarziShop && deliveredOrderIds.length > 0) {
-      openFarziDeliverModal(deliveredOrderIds[0]);
-    } else if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
-      openWhatsappMultiDeliveredShareModal(deliveredItemsForWa, shop);
-    }
+    if (isFarziShop && deliveredOrderIds.length > 0) { openFarziDeliverModal(deliveredOrderIds[0]); }
+    else if (shop && shop.mobile && deliveredItemsForWa.length > 0) { openWhatsappMultiDeliveredShareModal(deliveredItemsForWa, shop); }
   }, 300);
 }
 function closePendingShopModal() {
@@ -2214,7 +2262,6 @@ function refreshPendingShopModal() {
   }
   if (!stillPending) closePendingShopModal(); else openPendingShopModal(currentShopId);
 }
-
 function saveShopkeeper(btn) {
   if (!can('shopkeepers')) { showToast('Permission nahi hai', 'error'); return; }
   var id = document.getElementById('shopId').value;
@@ -2319,7 +2366,6 @@ function renderShopkeepers() {
   list.innerHTML = html;
   if (!can('shopkeepers')) { var form = document.getElementById('shopkeeperFormBox'); if (form) form.style.display = 'none'; }
 }
-
 function generateRouteName() {
   var nextNum = routes.length + 1; var names = {};
   for (var i = 0; i < routes.length; i++) names[routes[i].name] = true;
@@ -2801,7 +2847,6 @@ function deliverRouteShop(routeId, shopId) {
       }
       o.status = checkOrderDelivered(o) ? 'Delivered' : 'Partial';
       saveToFirebase('orders', o.id, o);
-      // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
       addOrderAmountToAccountIfNeeded(o);
       if (isFarzi && o.status === 'Delivered' && pendingOrderIds.indexOf(o.id) === -1) pendingOrderIds.push(o.id);
     }
@@ -2812,14 +2857,10 @@ function deliverRouteShop(routeId, shopId) {
     if (routeModal && routeModal.classList.contains('active')) openRouteModal(routeId);
     renderDashboardRoutes(); renderDashboard();
     showToast('✅ ' + shop.name + ' ke products deliver ho gaye!', 'success');
-    if (isFarzi && pendingOrderIds.length > 0) {
-      openFarziDeliverModal(pendingOrderIds[0]);
-    } else if (shop && shop.mobile && deliveredItemsForWa.length > 0) {
-      openWhatsappMultiDeliveredShareModal(deliveredItemsForWa, shop);
-    }
+    if (isFarzi && pendingOrderIds.length > 0) { openFarziDeliverModal(pendingOrderIds[0]); }
+    else if (shop && shop.mobile && deliveredItemsForWa.length > 0) { openWhatsappMultiDeliveredShareModal(deliveredItemsForWa, shop); }
   }, 300);
 }
-
 function prepareOrderForm() {
   selectedShopIdForOrder = null; selectedProductForOrder = null; selectedEditIndex = -1;
   currentOrderItems = []; isSavingOrder = false;
@@ -2954,12 +2995,8 @@ function saveMultiOrder(btn) {
   if (currentOrderItems.length === 0) { showToast('Kam az kam ek product add karein!', 'warning'); return; }
   if (!firebaseReady) { showToast('Firebase load nahi hua', 'error'); return; }
   if (btn) disableButton(btn, 'Opening...');
-  setTimeout(function() {
-    if (btn) enableButton(btn);
-    openAmountModal();
-  }, 200);
+  setTimeout(function() { if (btn) enableButton(btn); openAmountModal(); }, 200);
 }
-
 function renderOrdersPage() {
   var dateVal = document.getElementById('ordersDate').value || todayStr();
   var statusFilter = document.getElementById('ordersStatus').value;
@@ -3048,8 +3085,7 @@ function renderOrdersPage() {
               '<h4><i class="fa fa-receipt"></i> Order #' + (i + 1) + '</h4>' +
               '<p style="font-size:12px;color:#64748b;"><i class="fa fa-calendar"></i> ' + getOrderDateTimeText(o) + '</p>' +
               '<p style="font-size:12px;color:#64748b;">👤 ' + (function() { var u = findUserByUsername(o.createdBy); return u ? getUserDisplayName(u) : (o.createdBy || 'Unknown'); })() + '</p>' +
-            '</div>' +
-          '</div>' +
+            '</div></div>' +
           '<span class="shop-group-total">' + totalKgText(orderTotalKg) + '</span>' +
         '</div>' + orderItemsHtml + editCancelHtml + '</div>';
     }
@@ -3062,7 +3098,6 @@ function renderOrdersPage() {
   }
   list.innerHTML = html;
 }
-
 function openDeliverModal(orderId, product) {
   if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
   currentDeliverOrderId = orderId; currentDeliverProduct = product;
@@ -3115,15 +3150,11 @@ function confirmDelivery() {
   }
   order.status = checkOrderDelivered(order) ? 'Delivered' : 'Partial';
   saveToFirebase('orders', order.id, order);
-  // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
   addOrderAmountToAccountIfNeeded(order);
   closeDeliverModal(); cleanupRouteAfterDelivery();
   var pm = document.getElementById('pendingShopModal'); if (pm && pm.classList.contains('active')) refreshPendingShopModal();
   var shop = getShopById(order.shopId);
-  if (shop && shop.category === 'farzi' && order.status === 'Delivered') {
-    setTimeout(function() { openFarziDeliverModal(order.id); }, 400);
-    return;
-  }
+  if (shop && shop.category === 'farzi' && order.status === 'Delivered') { setTimeout(function() { openFarziDeliverModal(order.id); }, 400); return; }
   showToast('✅ Delivered mark ho gaya!', 'success');
   if (shop && shop.mobile) openWhatsappDeliveredShareModal(order, shop);
 }
@@ -3139,15 +3170,11 @@ function markAllDelivered() {
   }
   order.status = checkOrderDelivered(order) ? 'Delivered' : 'Partial';
   saveToFirebase('orders', order.id, order);
-  // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
   addOrderAmountToAccountIfNeeded(order);
   closeDeliverModal(); cleanupRouteAfterDelivery();
   var pm = document.getElementById('pendingShopModal'); if (pm && pm.classList.contains('active')) refreshPendingShopModal();
   var shop = getShopById(order.shopId);
-  if (shop && shop.category === 'farzi' && order.status === 'Delivered') {
-    setTimeout(function() { openFarziDeliverModal(order.id); }, 400);
-    return;
-  }
+  if (shop && shop.category === 'farzi' && order.status === 'Delivered') { setTimeout(function() { openFarziDeliverModal(order.id); }, 400); return; }
   showToast('✅ Poora deliver mark ho gaya!', 'success');
   if (shop && shop.mobile) openWhatsappDeliveredShareModal(order, shop);
 }
@@ -3228,7 +3255,6 @@ function confirmCombinedDelivery() {
     }
     order.status = checkOrderDelivered(order) ? 'Delivered' : 'Partial';
     saveToFirebase('orders', order.id, order);
-    // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
     addOrderAmountToAccountIfNeeded(order);
   }
   var waShop = null, waOrder = null;
@@ -3238,10 +3264,7 @@ function confirmCombinedDelivery() {
   }
   closeDeliverModal(); cleanupRouteAfterDelivery();
   var pm = document.getElementById('pendingShopModal'); if (pm && pm.classList.contains('active')) refreshPendingShopModal();
-  if (waShop && waShop.category === 'farzi' && waOrder && waOrder.status === 'Delivered') {
-    setTimeout(function() { openFarziDeliverModal(waOrder.id); }, 400);
-    return;
-  }
+  if (waShop && waShop.category === 'farzi' && waOrder && waOrder.status === 'Delivered') { setTimeout(function() { openFarziDeliverModal(waOrder.id); }, 400); return; }
   showToast('✅ Delivered mark ho gaya!', 'success');
   if (waShop && waShop.mobile && waOrder) openWhatsappDeliveredShareModal(waOrder, waShop);
 }
@@ -3258,7 +3281,6 @@ function markAllCombinedDelivered() {
     }
     order.status = checkOrderDelivered(order) ? 'Delivered' : 'Partial';
     saveToFirebase('orders', order.id, order);
-    // ✅ NAYA: Account mein amount add karo (agar deliver ho gaya)
     addOrderAmountToAccountIfNeeded(order);
   }
   var waShop = null, waOrder = null;
@@ -3268,14 +3290,10 @@ function markAllCombinedDelivered() {
   }
   closeDeliverModal(); cleanupRouteAfterDelivery();
   var pm = document.getElementById('pendingShopModal'); if (pm && pm.classList.contains('active')) refreshPendingShopModal();
-  if (waShop && waShop.category === 'farzi' && waOrder && waOrder.status === 'Delivered') {
-    setTimeout(function() { openFarziDeliverModal(waOrder.id); }, 400);
-    return;
-  }
+  if (waShop && waShop.category === 'farzi' && waOrder && waOrder.status === 'Delivered') { setTimeout(function() { openFarziDeliverModal(waOrder.id); }, 400); return; }
   showToast('✅ Poora deliver mark ho gaya!', 'success');
   if (waShop && waShop.mobile && waOrder) openWhatsappDeliveredShareModal(waOrder, waShop);
 }
-
 function openEditOrderModal(orderId) {
   if (!can('newOrder')) { showToast('Permission nahi hai', 'error'); return; }
   var order = null;
@@ -3395,7 +3413,6 @@ function saveEditedOrder(btn) {
     if (shop && shop.mobile) openWhatsappEditShareModal(orderToUpdate, shop, oldItems, newItems);
   }
 }
-
 function openCancelOrderModal(orderId) {
   if (!can('newOrder')) { showToast('Permission nahi hai', 'error'); return; }
   var order = null;
@@ -3440,7 +3457,6 @@ function confirmCancelOrder(btn) {
     if (shop && shop.mobile) openWhatsappCancelShareModal(orderCopy, shop);
   }
 }
-
 function renderDelivery() {
   var pending = [];
   for (var i = 0; i < orders.length; i++) { if (orders[i].status === 'Pending' || orders[i].status === 'Partial') pending.push(orders[i]); }
@@ -3489,7 +3505,6 @@ function renderDelivery() {
   }
   list.innerHTML = html;
 }
-
 function switchHistoryTab(tab) {
   var tabSales = document.getElementById('tabSales');
   var tabLog = document.getElementById('tabLog');
@@ -3730,10 +3745,10 @@ function viewShopHistory(shopId) {
   document.getElementById('modal').classList.add('active');
 }
 function closeModal() { document.getElementById('modal').classList.remove('active'); }
-
 window.addEventListener('load', function() {
   applySettings(); updateOnlineStatus(); showSplashScreen();
   loadQueueFromLocalStorage();
+  loadAccountsQueueFromLocalStorage();
   var loggedIn = localStorage.getItem('isLoggedIn') === 'true';
   var cachedUser = JSON.parse(localStorage.getItem('currentUser'));
   if (loggedIn && cachedUser) {
