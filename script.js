@@ -262,7 +262,6 @@ window.addEventListener('online', function() {
   isOnline = true; updateOnlineStatus();
   showToast('🌐 Internet wapas aa gaya — sync ho raha hai...', 'success', 2500);
   syncOfflineAccountsQueue();
-  setTimeout(function() { checkWhatsappQueueReminder(); }, 2000);
 });
 window.addEventListener('offline', function() { isOnline = false; updateOnlineStatus(); showToast('📴 Internet band — ab offline kaam karega', 'warning', 3000); });
 function updateOfflineBanner() { var b = document.getElementById('offlineBanner'); if (!b) return; b.style.display = isOnline ? 'none' : 'block'; }
@@ -745,8 +744,6 @@ function formatOrderItemsText(items) {
 function saveToWhatsappQueue(data) {
   data.id = 'queue_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   data.createdAt = data.createdAt || new Date().toISOString();
-  data.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  data.deleteAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   data.status = 'pending';
   data.createdBy = currentUser ? currentUser.user : 'unknown';
   whatsappQueue.push(data);
@@ -766,9 +763,13 @@ function loadQueueFromLocalStorage() {
     if (q) { whatsappQueue = JSON.parse(q); updateQueueBadge(); updateDashboardQueueBanner(); }
   } catch (e) {}
 }
+function getPendingQueueCount() {
+  var count = 0;
+  for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].status === 'pending') count++; }
+  return count;
+}
 function updateQueueBadge() {
-  var activeCount = 0;
-  for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].status === 'pending') activeCount++; }
+  var activeCount = getPendingQueueCount();
   var nav = document.getElementById('sidebarNav');
   if (nav && currentUser) renderSidebarNav();
   var dq = document.getElementById('dashboardQueueBanner');
@@ -783,49 +784,22 @@ function updateQueueBadge() {
 function updateDashboardQueueBanner() { updateQueueBadge(); }
 function checkWhatsappQueueReminder() {
   cleanupOldQueue();
-  var now = new Date();
-  var activeCount = 0;
-  for (var i = 0; i < whatsappQueue.length; i++) {
-    var q = whatsappQueue[i];
-    if (q.status !== 'pending') continue;
-    if (new Date(q.expiresAt) > now) activeCount++;
-  }
+  var activeCount = getPendingQueueCount();
   if (activeCount > 0) { currentQueueReminderCount = activeCount; showQueueReminderModal(activeCount); }
 }
 function showQueueReminderModal(count) {
   var modal = document.getElementById('whatsappQueueReminderModal');
   var txt = document.getElementById('queueReminderText');
-  if (txt) txt.textContent = 'Aap ke ' + count + ' messages WhatsApp par nahi bheje gaye (offline the)';
+  if (txt) txt.textContent = 'Aap ke ' + count + ' messages WhatsApp par nahi bheje gaye';
   if (modal) modal.classList.add('active');
 }
 function closeQueueReminderModal() {
   var modal = document.getElementById('whatsappQueueReminderModal');
   if (modal) modal.classList.remove('active');
 }
-function shareAllFromQueue(btn) {
+function goToQueueFromReminder() {
   closeQueueReminderModal();
-  if (!isOnline) { showToast('📴 Internet nahi hai — phir try karein', 'warning', 3000); return; }
-  if (btn) disableButton(btn, 'Opening...');
-  var pending = [];
-  for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].status === 'pending') pending.push(whatsappQueue[i]); }
-  if (pending.length === 0) { if (btn) enableButton(btn); showToast('Koi pending message nahi', 'info'); return; }
-  for (var i = 0; i < pending.length; i++) {
-    (function(q, idx) {
-      setTimeout(function() {
-        var url = 'https://wa.me/' + q.mobile + '?text=' + encodeURIComponent(q.message);
-        var win = window.open(url, '_blank');
-        if (win) {
-          q.status = 'shared'; q.sharedAt = new Date().toISOString();
-          if (firebaseReady) db.collection('whatsappQueue').doc(q.id).update({ status: 'shared', sharedAt: q.sharedAt }).catch(function(e) {});
-          saveQueueToLocalStorage(); renderWhatsappQueue(); updateQueueBadge();
-        }
-      }, idx * 2500);
-    })(pending[i], i);
-  }
-  setTimeout(function() {
-    if (btn) enableButton(btn);
-    showToast('✅ ' + pending.length + ' messages WhatsApp par khul rahe hain', 'success', 4000);
-  }, 500);
+  showPage('whatsappQueue');
 }
 function shareFromQueue(id) {
   var q = null;
@@ -853,13 +827,14 @@ function deleteFromQueue(id) {
   showToast('Message delete ho gaya', 'info');
 }
 function cleanupOldQueue() {
-  var now = new Date(); var newQueue = []; var deleted = 0;
+  var now = new Date(); var newQueue = [];
   for (var i = 0; i < whatsappQueue.length; i++) {
     var q = whatsappQueue[i];
-    if (q.deleteAt && new Date(q.deleteAt) < now) { if (firebaseReady) db.collection('whatsappQueue').doc(q.id).delete().catch(function(e) {}); deleted++; }
+    if (q.deleteAt && new Date(q.deleteAt) < now) { if (firebaseReady) db.collection('whatsappQueue').doc(q.id).delete().catch(function(e) {}); }
     else newQueue.push(q);
   }
-  if (deleted > 0) { whatsappQueue = newQueue; saveQueueToLocalStorage(); updateQueueBadge(); }
+  whatsappQueue = newQueue;
+  saveQueueToLocalStorage(); updateQueueBadge();
 }
 function renderWhatsappQueue() {
   var list = document.getElementById('queueList');
@@ -891,6 +866,8 @@ function renderWhatsappQueue() {
   }
   list.innerHTML = html;
 }
+
+// ================== ACCOUNTS ==================
 function getShopTotalKhata(shopId) {
   var total = 0;
   for (var i = 0; i < accounts.length; i++) {
@@ -1770,6 +1747,7 @@ function showApp() {
   initBackButtonHandling();
   loadAccountsQueueFromLocalStorage();
   setTimeout(function() { if (isOnline) syncOfflineAccountsQueue(); }, 2000);
+  setTimeout(function() { cleanupOldQueue(); checkWhatsappQueueReminder(); }, 2500);
 }
 function manualSync() {
   if (!firebaseReady) { alert('Firebase load nahi hua.'); return; }
@@ -1793,8 +1771,7 @@ function renderSidebarNav() {
   var activePage = 'dashboard';
   var pages = document.querySelectorAll('.page.active');
   if (pages.length > 0) activePage = pages[0].id;
-  var activeQueueCount = 0;
-  for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].status === 'pending') activeQueueCount++; }
+  var activeQueueCount = getPendingQueueCount();
   var html = '';
   for (var i = 0; i < menuLayout.length; i++) {
     var item = menuLayout[i];
