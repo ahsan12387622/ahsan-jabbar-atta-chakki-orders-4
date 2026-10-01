@@ -866,8 +866,6 @@ function renderWhatsappQueue() {
   }
   list.innerHTML = html;
 }
-
-// ================== ACCOUNTS ==================
 function getShopTotalKhata(shopId) {
   var total = 0;
   for (var i = 0; i < accounts.length; i++) {
