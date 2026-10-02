@@ -500,7 +500,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 #editItemModal .modal-content { border-top: 5px solid #6366f1; }
 #editItemModal h2 { color: #4f46e5; }
 
-/* ============ NAYA: AMOUNT MODAL ============ */
+/* ============ AMOUNT MODAL ============ */
 #amountModal .modal-content { border-top: 5px solid #16a34a; }
 #amountModal h2 { color: #15803d; }
 .amount-item-row {
@@ -565,25 +565,324 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .amount-total-box span { font-size: 15px; opacity: 0.9; }
 .amount-total-box strong { font-size: 26px; font-weight: 800; }
 
-/* ============ NAYA: WASOOLI MODAL ============ */
+/* ============ WASOOLI MODAL ============ */
 #wasooliModal .modal-content { border-top: 5px solid #16a34a; }
 #wasooliModal h2 { color: #15803d; }
 
-/* ============ NAYA: EDIT WASOOLI MODAL ============ */
+/* ============ EDIT WASOOLI MODAL ============ */
 #editWasooliModal .modal-content { border-top: 5px solid #6366f1; }
 #editWasooliModal h2 { color: #4f46e5; }
 
-/* ============ NAYA: DELETE WASOOLI MODAL ============ */
+/* ============ DELETE WASOOLI MODAL ============ */
 #deleteWasooliModal .modal-content { border-top: 5px solid #dc2626; }
 #deleteWasooliModal h2 { color: #dc2626; }
 
-/* ============ NAYA: FARZI DELIVER MODAL ============ */
+/* ============ FARZI DELIVER MODAL ============ */
 #farziDeliverModal .modal-content { border-top: 5px solid #2563eb; }
 #farziDeliverModal h2 { color: #1e40af; }
 
-/* ============ NAYA: WHATSAPP QUEUE REMINDER MODAL ============ */
+/* ============ WHATSAPP QUEUE REMINDER MODAL ============ */
 #whatsappQueueReminderModal .modal-content { border-top: 5px solid #25D366; }
 #whatsappQueueReminderModal h2 { color: #15803d; }
+
+/* ============ NAYA: ORDER DETAIL MODAL (Feature #1) ============ */
+#orderDetailModal .modal-content { border-top: 5px solid #16a34a; }
+#orderDetailModal h2 { color: #15803d; }
+
+.order-detail-shop-info {
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  border: 2px solid #16a34a;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.order-detail-shop-info h3 {
+  color: #166534;
+  font-size: 18px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.order-detail-shop-info p {
+  color: #15803d;
+  font-size: 13px;
+}
+
+.order-detail-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #6366f1;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.order-detail-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #e2e8f0;
+}
+.order-detail-card-head .odh-title {
+  font-weight: 700;
+  color: #1e293b;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.order-detail-card-head .odh-date {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+.order-detail-items {
+  margin-bottom: 10px;
+}
+.order-detail-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px dashed #f1f5f9;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.order-detail-item-row:last-child { border-bottom: none; }
+.order-detail-item-row .odir-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #e0e7ff, #ede9fe);
+  color: #3730a3;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid #c7d2fe;
+}
+.order-detail-item-row .odir-qty {
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(135deg, #dcfce7, #d1fae5);
+  color: #15803d;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid #86efac;
+}
+.order-detail-item-row .odir-amount {
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid #fcd34d;
+}
+.order-detail-card-subtotal {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-weight: 700;
+  color: #166534;
+}
+.order-detail-card-subtotal strong {
+  font-size: 16px;
+  color: #15803d;
+}
+.order-detail-deliver-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: #fff;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 2px 6px rgba(22,163,74,0.3);
+  transition: 0.2s;
+}
+.order-detail-deliver-btn:hover {
+  background: linear-gradient(135deg, #15803d, #166534);
+  transform: translateY(-1px);
+}
+.grand-total-box {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: #fff;
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 12px rgba(22,163,74,0.3);
+}
+.grand-total-box .gt-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.grand-total-box .gt-label {
+  font-size: 15px;
+  opacity: 0.95;
+  font-weight: 600;
+}
+.grand-total-box .gt-value {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+.grand-total-deliver-all-btn {
+  width: 100%;
+  background: #fff;
+  color: #15803d;
+  border: none;
+  padding: 14px 20px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transition: 0.2s;
+}
+.grand-total-deliver-all-btn:hover {
+  background: #f0fdf4;
+  transform: translateY(-1px);
+}
+
+/* ============ NAYA: PAYMENT SPLIT MODAL (Feature #2) ============ */
+#paymentSplitModal .modal-content { border-top: 5px solid #f59e0b; }
+#paymentSplitModal h2 { color: #d97706; }
+
+.split-item-row {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #6366f1;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.split-item-row .si-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.split-item-row .si-name {
+  font-weight: 700;
+  color: #3730a3;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #e0e7ff, #ede9fe);
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid #c7d2fe;
+}
+.split-item-row .si-amount {
+  font-weight: 800;
+  color: #d97706;
+  font-size: 14px;
+}
+.split-item-row .si-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.split-item-row .si-inputs label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 4px;
+  display: block;
+}
+.split-item-row .si-inputs input {
+  width: 100%;
+  padding: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 8px;
+  border: 2px solid #e2e8f0;
+  background: #fff;
+}
+.split-item-row .si-inputs input.paid {
+  border-color: #16a34a;
+  background: #f0fdf4;
+  color: #15803d;
+}
+.split-item-row .si-inputs input.pending {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #d97706;
+}
+.split-item-row .si-inputs input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(22,163,74,0.15);
+}
+
+.split-total-section {
+  background: #fff;
+  border: 2px dashed #16a34a;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 14px 0;
+}
+.split-total-section .split-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 10px;
+}
+.split-total-section .split-row:last-child { margin-bottom: 0; }
+.split-total-section .split-row label {
+  font-size: 14px;
+  color: #334155;
+}
+.split-total-section .split-row input {
+  font-size: 18px;
+  font-weight: 800;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 2px solid #16a34a;
+  width: 160px;
+  text-align: center;
+  background: #f0fdf4;
+  color: #15803d;
+}
+.split-total-section .split-row input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(22,163,74,0.2);
+}
 
 /* ============ EDIT ORDER — ITEM ROW ============ */
 .edit-item-row {
@@ -714,6 +1013,15 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   text-overflow: ellipsis;
   max-width: 100%;
 }
+.pending-shop-name .psn-amount {
+  font-size: 12px;
+  font-weight: 800;
+  color: #92400e;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 3px 10px;
+  border-radius: 6px;
+  display: inline-block;
+}
 .pending-shop-name.farzi-card {
   background: linear-gradient(135deg, #dbeafe, #bfdbfe) !important;
   border-color: #93c5fd !important;
@@ -722,6 +1030,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 }
 .pending-shop-name.farzi-card .order-count { background: #2563eb !important; }
 .pending-shop-name.farzi-card .psn-summary { color: #1e40af !important; }
+.pending-shop-name.farzi-card .psn-amount { color: #1e40af !important; background: rgba(255,255,255,0.7); }
 .pending-shop-name.farzi-card i.shop-icon { color: #2563eb !important; }
 
 /* ============ SHOP PICKER ============ */
@@ -876,6 +1185,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .sales-row .sr-stats { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .sales-row .sr-badge { background: #dcfce7; color: #166534; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 800; }
 .sales-row .sr-badge.blue { background: #dbeafe; color: #1e40af; }
+.sales-row .sr-badge.amber { background: #fef3c7; color: #92400e; }
 .sales-row .sr-arrow { color: #94a3b8; font-size: 14px; }
 .sales-detail-row { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
 .sales-detail-row .sd-date { color: #64748b; font-size: 12px; font-weight: 600; }
@@ -1013,6 +1323,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 }
 .pending-order-row .por-info { flex: 1; min-width: 200px; }
 .pending-order-row .por-amount { font-weight: 800; color: #d97706; font-size: 18px; margin-bottom: 8px; }
+.pending-order-row .por-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn-paid {
   background: linear-gradient(135deg, #16a34a, #15803d);
   color: #fff;
@@ -1026,6 +1337,19 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   box-shadow: 0 2px 6px rgba(22,163,74,0.3);
 }
 .btn-paid:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(22,163,74,0.4); }
+.btn-split {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: 0.2s;
+  box-shadow: 0 2px 6px rgba(245,158,11,0.3);
+}
+.btn-split:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(245,158,11,0.4); }
 
 /* ============ FARZI BADGE ============ */
 .farzi-badge {
@@ -1097,4 +1421,11 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   .pending-amount-header .big-num { font-size: 30px; }
   .amount-total-box strong { font-size: 22px; }
   .farzi-filter-tabs button { font-size: 12px; padding: 9px 6px; }
+  .split-item-row .si-inputs { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .split-item-row .si-inputs input { font-size: 14px; padding: 9px 6px; }
+  .split-total-section .split-row input { width: 130px; font-size: 16px; }
+  .grand-total-box .gt-value { font-size: 22px; }
+  .order-detail-item-row .odir-name,
+  .order-detail-item-row .odir-qty,
+  .order-detail-item-row .odir-amount { font-size: 11px; padding: 3px 9px; }
 }
