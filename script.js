@@ -40,6 +40,12 @@ var currentQueueReminderCount = 0;
 var currentEditingWasooliId = null;
 var currentDeletingWasooliId = null;
 
+// Feature #1 & #2 ke naye variables
+var currentOrderDetailShopId = null;
+var currentOrderDetailReadOnly = false;
+var currentSplitOrderId = null;
+var currentSplitItems = [];
+
 function initFirebase(callback) {
   if (firebaseLoaded) { if (callback) callback(); return; }
   firebaseLoaded = true;
@@ -200,6 +206,8 @@ function handleBackButton() {
     else if (modalId === 'whatsappQueueReminderModal') closeQueueReminderModal();
     else if (modalId === 'editWasooliModal') closeEditWasooliModal();
     else if (modalId === 'deleteWasooliModal') closeDeleteWasooliModal();
+    else if (modalId === 'orderDetailModal') closeOrderDetailModal();
+    else if (modalId === 'paymentSplitModal') closePaymentSplitModal();
     else openModal.classList.remove('active');
     history.pushState({ modalClosed: true }, '');
     return;
@@ -738,7 +746,12 @@ function formatWaNumber(mobile) {
 }
 function formatOrderItemsText(items) {
   var lines = [];
-  for (var i = 0; i < items.length; i++) { var it = items[i]; var qty = qtyText(it.maund, it.kg); lines.push('• ' + it.product + ' — ' + qty); }
+  for (var i = 0; i < items.length; i++) { 
+    var it = items[i]; 
+    var qty = qtyText(it.maund, it.kg); 
+    var amtText = (parseInt(it.amount) || 0) > 0 ? ' — ' + formatRs(it.amount) : ' — Rs. 0';
+    lines.push('• ' + it.product + ' — ' + qty + amtText); 
+  }
   return lines.join('\n');
 }
 function saveToWhatsappQueue(data) {
@@ -806,8 +819,6 @@ function shareFromQueue(id) {
   for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].id === id) { q = whatsappQueue[i]; break; } }
   if (!q) return;
   if (!isOnline) { showToast('📴 Internet nahi hai', 'warning', 3000); return; }
-  
-  // Pehle status update karo — chahe WhatsApp khule ya na khule
   q.status = 'shared';
   q.sharedAt = new Date().toISOString();
   if (firebaseReady) {
@@ -816,11 +827,8 @@ function shareFromQueue(id) {
   saveQueueToLocalStorage();
   renderWhatsappQueue();
   updateQueueBadge();
-  
-  // Ab WhatsApp kholo
   var url = 'https://wa.me/' + q.mobile + '?text=' + encodeURIComponent(q.message);
   window.open(url, '_blank');
-  
   showToast('✅ Message WhatsApp par khul gaya', 'success');
 }
 function deleteFromQueue(id) {
@@ -975,7 +983,10 @@ function renderAccountDetailEntries() {
   for (var i = 0; i < entries.length; i++) {
     var e = entries[i];
     var icon = e.type === 'order' ? '📦' : '💵';
-    var label = e.type === 'order' ? 'Order: ' + (e.productName || '') : 'Wasooli';
+    // Feature #3: Order ke saath quantity bhi dikhao
+    var label = e.type === 'order'
+      ? 'Order: ' + (e.productName || '') + ' (' + qtyText(e.maund, e.kg) + ')'
+      : 'Wasooli';
     var sign = e.type === 'order' ? '+' : '-';
     var cls = e.type === 'order' ? 'plus' : 'minus';
     var offlineTag = e._offlinePending ? ' <span style="background:#f59e0b;color:#fff;font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700;">⏳</span>' : '';
@@ -1128,10 +1139,16 @@ function confirmDeleteWasooli(btn) {
     if (totalEl) totalEl.textContent = formatRs(getShopTotalKhata(currentAccountShopId));
   }, 200);
 }
-function addToAccount(shopId, amount, type, orderId, productName, note) {
+
+// =====================================================
+// Feature #3: addToAccount() — ab maund, kg bhi accept karega
+// =====================================================
+function addToAccount(shopId, amount, type, orderId, productName, note, maund, kg) {
   var entry = {
     shopId: shopId, type: type, amount: parseInt(amount) || 0,
     orderId: orderId || '', productName: productName || '', note: note || '',
+    maund: parseInt(maund) || 0,
+    kg: parseInt(kg) || 0,
     date: todayStr(), createdAt: new Date().toISOString(),
     createdBy: currentUser ? currentUser.user : 'unknown',
     id: 'local_acc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
@@ -1158,14 +1175,16 @@ function addOrderAmountToAccountIfNeeded(order) {
   if (totalAmt <= 0) return;
   for (var i = 0; i < order.items.length; i++) {
     var itm = order.items[i];
-    if (itm.amount && itm.amount > 0) { addToAccount(order.shopId, itm.amount, 'order', order.id, itm.product); }
+    if (itm.amount && itm.amount > 0) {
+      // Feature #3: maund aur kg bhi pass karo
+      addToAccount(order.shopId, itm.amount, 'order', order.id, itm.product, '', itm.maund, itm.kg);
+    }
   }
   order.amountAddedToAccount = true;
   if (firebaseReady && isOnline && String(order.id).indexOf('local_') !== 0) {
     db.collection('orders').doc(String(order.id)).update({ amountAddedToAccount: true }).catch(function(e) { console.log(e); });
   }
-}
-function shareAccountToWhatsapp() {
+}function shareAccountToWhatsapp() {
   if (!currentAccountShopId) return;
   var shop = getShopById(currentAccountShopId);
   if (!shop) return;
@@ -1187,7 +1206,398 @@ function shareAccountToWhatsapp() {
   var msgBox = document.getElementById('whatsappShareMessage');
   if (msgBox) msgBox.textContent = msg;
   if (modal) modal.classList.add('active');
-}function openAmountModal() {
+}
+
+// =====================================================
+// Feature #1: NAYA — Order Detail Modal
+// =====================================================
+function openOrderDetailModal(shopId, options) {
+  options = options || {};
+  var readOnly = options.readOnly === true;
+  var today = todayStr();
+  var shop = getShopById(shopId);
+  if (!shop) return;
+  var sOrders = [];
+  for (var i = 0; i < orders.length; i++) {
+    var o = orders[i];
+    if (o.shopId != shopId) continue;
+    if (readOnly) {
+      if (o.status !== 'Delivered') continue;
+    } else {
+      if (o.status !== 'Pending' && o.status !== 'Partial') continue;
+    }
+    sOrders.push(o);
+  }
+  // Sort by createdAt (purana pehle)
+  sOrders.sort(function(a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+  currentOrderDetailShopId = shopId;
+  currentOrderDetailReadOnly = readOnly;
+  var titleEl = document.getElementById('orderDetailTitle');
+  if (titleEl) titleEl.textContent = readOnly ? 'Order Detail (History)' : 'Order Detail';
+  var body = document.getElementById('orderDetailBody');
+  if (!body) return;
+  if (sOrders.length === 0) {
+    body.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>' + (readOnly ? 'Koi delivered order nahi.' : 'Koi pending order nahi.') + '</div>';
+    document.getElementById('orderDetailModal').classList.add('active');
+    return;
+  }
+  var farziTag = (shop.category === 'farzi') ? ' <span class="farzi-badge">FARZI</span>' : '';
+  var grandTotal = 0;
+  var html = '';
+  // Shop info header
+  html += '<div class="order-detail-shop-info">' +
+    '<h3><i class="fa fa-store"></i> ' + shop.name + farziTag + '</h3>' +
+    '<p><i class="fa fa-phone"></i> ' + shop.mobile + (shop.address ? ' • <i class="fa fa-map-marker-alt"></i> ' + shop.address : '') + '</p>' +
+    '</div>';
+  // Har order ka card
+  for (var i = 0; i < sOrders.length; i++) {
+    var o = sOrders[i];
+    var orderTotal = 0;
+    var itemsHtml = '';
+    for (var j = 0; j < o.items.length; j++) {
+      var it = o.items[j];
+      var rowAmt = parseInt(it.amount) || 0;
+      orderTotal += rowAmt;
+      var qtyStr = qtyText(it.maund, it.kg);
+      itemsHtml += '<div class="order-detail-item-row">' +
+        '<span class="odir-name">📦 ' + it.product + '</span>' +
+        '<span class="odir-qty">' + qtyStr + '</span>' +
+        '<span class="odir-amount">' + formatRs(rowAmt) + '</span>' +
+        '</div>';
+    }
+    grandTotal += orderTotal;
+    var statusBadge = '';
+    if (o.status === 'Delivered') statusBadge = '<span class="badge delivered">Delivered</span>';
+    else if (o.status === 'Partial') statusBadge = '<span class="badge partial">Partial</span>';
+    else statusBadge = '<span class="badge pending">Pending</span>';
+    html += '<div class="order-detail-card">' +
+      '<div class="order-detail-card-head">' +
+        '<div class="odh-title"><i class="fa fa-receipt"></i> Order #' + (i + 1) + ' ' + statusBadge + '</div>' +
+        '<div class="odh-date"><i class="fa fa-calendar"></i> ' + getOrderDateTimeText(o) + '</div>' +
+      '</div>' +
+      '<div class="order-detail-items">' + itemsHtml + '</div>' +
+      '<div class="order-detail-card-subtotal">' +
+        '<span>Subtotal:</span>' +
+        '<strong>' + formatRs(orderTotal) + '</strong>' +
+      '</div>';
+    if (!readOnly) {
+      html += '<button class="order-detail-deliver-btn" onclick="deliverSingleOrderFromModal(\'' + o.id + '\', this)">' +
+        '<i class="fa fa-check"></i> Deliver Karein' +
+        '</button>';
+    }
+    html += '</div>';
+  }
+  // Grand total box
+  html += '<div class="grand-total-box">' +
+    '<div class="gt-row">' +
+      '<span class="gt-label">💰 Grand Total:</span>' +
+      '<span class="gt-value">' + formatRs(grandTotal) + '</span>' +
+    '</div>';
+  if (!readOnly && sOrders.length > 1) {
+    html += '<button class="grand-total-deliver-all-btn" onclick="deliverAllOrdersFromModal(\'' + shopId + '\', this)">' +
+      '<i class="fa fa-check-double"></i> Sab Deliver Karein' +
+      '</button>';
+  }
+  html += '</div>';
+  body.innerHTML = html;
+  document.getElementById('orderDetailModal').classList.add('active');
+}
+function closeOrderDetailModal() {
+  document.getElementById('orderDetailModal').classList.remove('active');
+  currentOrderDetailShopId = null;
+  currentOrderDetailReadOnly = false;
+}
+function deliverSingleOrderFromModal(orderId, btn) {
+  if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
+  var order = null;
+  for (var i = 0; i < orders.length; i++) { if (orders[i].id == orderId) { order = orders[i]; break; } }
+  if (!order) return;
+  if (btn) disableButton(btn, 'Delivering...');
+  var shop = getShopById(order.shopId);
+  var isFarzi = shop && shop.category === 'farzi';
+  // Poora order deliver
+  for (var i = 0; i < order.items.length; i++) {
+    var it = order.items[i];
+    it.deliveredMaund = parseInt(it.maund) || 0;
+    it.deliveredKg = parseInt(it.kg) || 0;
+  }
+  order.status = checkOrderDelivered(order) ? 'Delivered' : 'Partial';
+  saveToFirebase('orders', order.id, order);
+  addOrderAmountToAccountIfNeeded(order);
+  setTimeout(function() {
+    if (btn) enableButton(btn);
+    cleanupRouteAfterDelivery();
+    renderOrdersPage(); renderDashboard(); renderDelivery();
+    var pm = document.getElementById('pendingShopModal'); if (pm && pm.classList.contains('active')) refreshPendingShopModal();
+    showToast('✅ Order deliver ho gaya!', 'success');
+    // Farzi check
+    if (isFarzi && order.status === 'Delivered') {
+      closeOrderDetailModal();
+      setTimeout(function() { openFarziDeliverModal(order.id); }, 400);
+      return;
+    }
+    // Refresh modal
+    if (currentOrderDetailShopId) {
+      setTimeout(function() {
+        var stillPending = false;
+        for (var i = 0; i < orders.length; i++) {
+          var o = orders[i];
+          if (o.shopId == currentOrderDetailShopId && (o.status === 'Pending' || o.status === 'Partial')) { stillPending = true; break; }
+        }
+        if (!stillPending) closeOrderDetailModal();
+        else openOrderDetailModal(currentOrderDetailShopId, { readOnly: false });
+      }, 500);
+    }
+    // WhatsApp
+    if (shop && shop.mobile && !isFarzi) {
+      setTimeout(function() { openWhatsappDeliveredShareModal(order, shop); }, 600);
+    }
+  }, 300);
+}
+function deliverAllOrdersFromModal(shopId, btn) {
+  if (!can('deliver')) { showToast('Permission nahi hai', 'error'); return; }
+  var shop = getShopById(shopId);
+  if (!shop) return;
+  if (btn) disableButton(btn, 'Delivering...');
+  var deliveredOrders = [];
+  var isFarzi = shop.category === 'farzi';
+  for (var i = 0; i < orders.length; i++) {
+    var o = orders[i];
+    if (o.shopId != shopId) continue;
+    if (o.status !== 'Pending' && o.status !== 'Partial') continue;
+    for (var j = 0; j < o.items.length; j++) {
+      var it = o.items[j];
+      it.deliveredMaund = parseInt(it.maund) || 0;
+      it.deliveredKg = parseInt(it.kg) || 0;
+    }
+    o.status = checkOrderDelivered(o) ? 'Delivered' : 'Partial';
+    saveToFirebase('orders', o.id, o);
+    addOrderAmountToAccountIfNeeded(o);
+    if (o.status === 'Delivered') deliveredOrders.push(o);
+  }
+  setTimeout(function() {
+    if (btn) enableButton(btn);
+    cleanupRouteAfterDelivery();
+    renderOrdersPage(); renderDashboard(); renderDelivery();
+    var pm = document.getElementById('pendingShopModal'); if (pm && pm.classList.contains('active')) refreshPendingShopModal();
+    showToast('✅ Saare orders deliver ho gaye!', 'success');
+    closeOrderDetailModal();
+    if (isFarzi && deliveredOrders.length > 0) {
+      setTimeout(function() { openFarziDeliverModal(deliveredOrders[0].id); }, 400);
+      return;
+    }
+    if (shop && shop.mobile && deliveredOrders.length > 0) {
+      setTimeout(function() { openWhatsappDeliveredShareModal(deliveredOrders[0], shop); }, 500);
+    }
+  }, 300);
+}
+
+// =====================================================
+// Feature #2: NAYA — Payment Split Modal (Farzi)
+// =====================================================
+function openPaymentSplitModal(order) {
+  if (!order) return;
+  currentSplitOrderId = order.id;
+  currentSplitItems = [];
+  var totalOrderAmount = 0;
+  for (var i = 0; i < order.items.length; i++) {
+    var it = order.items[i];
+    var amt = parseInt(it.amount) || 0;
+    var paidAmt = parseInt(it.paidAmount) || 0;
+    var pendAmt = parseInt(it.pendingAmount);
+    if (isNaN(pendAmt)) pendAmt = amt - paidAmt;
+    totalOrderAmount += amt;
+    currentSplitItems.push({
+      product: it.product,
+      amount: amt,
+      paid: paidAmt,
+      pending: pendAmt,
+      maund: parseInt(it.maund) || 0,
+      kg: parseInt(it.kg) || 0
+    });
+  }
+  // Order-level totals
+  var orderPaid = parseInt(order.paidAmount) || 0;
+  var orderPending = parseInt(order.pendingAmount);
+  if (isNaN(orderPending)) orderPending = totalOrderAmount - orderPaid;
+  var nameEl = document.getElementById('splitShopName');
+  var shop = getShopById(order.shopId);
+  if (nameEl && shop) {
+    var farziTag = (shop.category === 'farzi') ? ' (Farzi)' : '';
+    nameEl.textContent = shop.name + farziTag + ' — ' + getOrderDateTimeText(order);
+  }
+  var totalEl = document.getElementById('splitTotalAmount');
+  if (totalEl) totalEl.textContent = formatRs(totalOrderAmount);
+  var paidInput = document.getElementById('splitPaidInput');
+  if (paidInput) paidInput.value = orderPaid > 0 ? orderPaid : '';
+  renderSplitItemsList();
+  updateSplitPendingText();
+  document.getElementById('paymentSplitModal').classList.add('active');
+}
+function closePaymentSplitModal() {
+  document.getElementById('paymentSplitModal').classList.remove('active');
+  currentSplitOrderId = null;
+  currentSplitItems = [];
+}
+function renderSplitItemsList() {
+  var list = document.getElementById('splitItemsList');
+  if (!list) return;
+  if (currentSplitItems.length === 0) {
+    list.innerHTML = '<div class="empty">Koi product nahi.</div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < currentSplitItems.length; i++) {
+    var it = currentSplitItems[i];
+    var qtyStr = qtyText(it.maund, it.kg);
+    html += '<div class="split-item-row">' +
+      '<div class="si-head">' +
+        '<span class="si-name">📦 ' + it.product + ' <small style="color:#64748b;font-weight:500;">(' + qtyStr + ')</small></span>' +
+        '<span class="si-amount">' + formatRs(it.amount) + '</span>' +
+      '</div>' +
+      '<div class="si-inputs">' +
+        '<div>' +
+          '<label>Diya (Rs.)</label>' +
+          '<input type="number" class="paid" min="0" max="' + it.amount + '" value="' + it.paid + '" data-idx="' + i + '" oninput="onSplitPaidInput(' + i + ', this.value)" />' +
+        '</div>' +
+        '<div>' +
+          '<label>Pending (Rs.)</label>' +
+          '<input type="number" class="pending" min="0" max="' + it.amount + '" value="' + it.pending + '" data-idx="' + i + '" oninput="onSplitPendingInput(' + i + ', this.value)" />' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+  list.innerHTML = html;
+}
+function onSplitPaidInput(idx, val) {
+  if (idx < 0 || idx >= currentSplitItems.length) return;
+  var it = currentSplitItems[idx];
+  var paid = parseInt(val) || 0;
+  if (paid < 0) paid = 0;
+  if (paid > it.amount) paid = it.amount;
+  it.paid = paid;
+  it.pending = it.amount - paid;
+  // Update pending input
+  var pendingInput = document.querySelector('.split-item-row .pending[data-idx="' + idx + '"]');
+  if (pendingInput) pendingInput.value = it.pending;
+  recalculateSplitTotal();
+}
+function onSplitPendingInput(idx, val) {
+  if (idx < 0 || idx >= currentSplitItems.length) return;
+  var it = currentSplitItems[idx];
+  var pending = parseInt(val) || 0;
+  if (pending < 0) pending = 0;
+  if (pending > it.amount) pending = it.amount;
+  it.pending = pending;
+  it.paid = it.amount - pending;
+  var paidInput = document.querySelector('.split-item-row .paid[data-idx="' + idx + '"]');
+  if (paidInput) paidInput.value = it.paid;
+  recalculateSplitTotal();
+}
+function recalculateSplitTotal() {
+  var totalPaid = 0;
+  for (var i = 0; i < currentSplitItems.length; i++) { totalPaid += currentSplitItems[i].paid; }
+  var paidInput = document.getElementById('splitPaidInput');
+  if (paidInput) paidInput.value = totalPaid;
+  updateSplitPendingText();
+}
+function updateSplitPendingText() {
+  var totalOrder = 0, totalPaid = 0;
+  for (var i = 0; i < currentSplitItems.length; i++) {
+    totalOrder += currentSplitItems[i].amount;
+    totalPaid += currentSplitItems[i].paid;
+  }
+  var pending = totalOrder - totalPaid;
+  var el = document.getElementById('splitPendingText');
+  if (el) el.textContent = formatRs(pending);
+}
+function syncSplitFromPaidInput() {
+  var paidInput = document.getElementById('splitPaidInput');
+  if (!paidInput) return;
+  var totalPaid = parseInt(paidInput.value) || 0;
+  if (totalPaid < 0) totalPaid = 0;
+  var totalOrder = 0;
+  for (var i = 0; i < currentSplitItems.length; i++) totalOrder += currentSplitItems[i].amount;
+  if (totalPaid > totalOrder) { totalPaid = totalOrder; paidInput.value = totalPaid; }
+  // Distribute upar se neeche
+  var remaining = totalPaid;
+  for (var i = 0; i < currentSplitItems.length; i++) {
+    var it = currentSplitItems[i];
+    var give = Math.min(it.amount, remaining);
+    it.paid = give;
+    it.pending = it.amount - give;
+    remaining -= give;
+  }
+  renderSplitItemsList();
+  updateSplitPendingText();
+}
+function savePaymentSplit(btn) {
+  if (!currentSplitOrderId) return;
+  var order = null;
+  for (var i = 0; i < orders.length; i++) { if (orders[i].id == currentSplitOrderId) { order = orders[i]; break; } }
+  if (!order) { closePaymentSplitModal(); return; }
+  if (btn) disableButton(btn, 'Saving...');
+  var totalOrder = 0, totalPaid = 0;
+  for (var i = 0; i < currentSplitItems.length; i++) {
+    totalOrder += currentSplitItems[i].amount;
+    totalPaid += currentSplitItems[i].paid;
+  }
+  var totalPending = totalOrder - totalPaid;
+  // Order items update
+  for (var i = 0; i < order.items.length; i++) {
+    var it = order.items[i];
+    for (var j = 0; j < currentSplitItems.length; j++) {
+      if (currentSplitItems[j].product === it.product) {
+        it.paidAmount = currentSplitItems[j].paid;
+        it.pendingAmount = currentSplitItems[j].pending;
+        break;
+      }
+    }
+  }
+  order.paidAmount = totalPaid;
+  order.pendingAmount = totalPending;
+  order.splitUpdatedAt = new Date().toISOString();
+  if (totalPending <= 0) {
+    order.amountStatus = 'paid';
+    order.paidAt = new Date().toISOString();
+    order.paidBy = currentUser ? currentUser.user : 'unknown';
+  } else {
+    order.amountStatus = 'pending';
+  }
+  // Account entry — jo naya paid hua
+  var prevPaid = parseInt(order._prevPaidForAccount) || 0;
+  // Simple: poora paid amount account mein add karo (agar pehli baar hai)
+  if (firebaseReady) {
+    db.collection('orders').doc(String(order.id)).update({
+      items: order.items,
+      paidAmount: order.paidAmount,
+      pendingAmount: order.pendingAmount,
+      amountStatus: order.amountStatus,
+      paidAt: order.paidAt || null,
+      paidBy: order.paidBy || null,
+      splitUpdatedAt: order.splitUpdatedAt
+    }).then(function() {
+      if (btn) enableButton(btn);
+      closePaymentSplitModal();
+      showToast(totalPending <= 0 ? '✅ Poori payment clear!' : '✅ Split save ho gaya — ' + formatRs(totalPending) + ' pending', 'success');
+      renderPendingAmounts();
+      renderDashboard();
+      if (currentFarziCustomerDetailShopId) {
+        setTimeout(function() { renderFarziDetailOrders(currentFarziCustomerDetailShopId); }, 200);
+      }
+    }).catch(function(e) {
+      if (btn) enableButton(btn);
+      closePaymentSplitModal();
+      showToast('⚠️ Local save — internet aane par sync', 'warning');
+    });
+  } else {
+    if (btn) enableButton(btn);
+    closePaymentSplitModal();
+    showToast('📴 Offline — split local save', 'warning');
+  }
+}
+
+function openAmountModal() {
   if (currentOrderItems.length === 0) return;
   var list = document.getElementById('amountItemsList');
   var html = '';
@@ -1234,14 +1644,19 @@ function saveMultiOrderActual() {
     var it = currentOrderItems[i];
     var rowKg = (it.maund * 40) + it.kg;
     var amt = parseInt(it.amount) || 0;
-    items.push({ product: it.product, maund: it.maund, kg: it.kg, deliveredMaund: 0, deliveredKg: 0, totalKg: rowKg, amount: amt });
+    items.push({
+      product: it.product, maund: it.maund, kg: it.kg,
+      deliveredMaund: 0, deliveredKg: 0, totalKg: rowKg, amount: amt,
+      paidAmount: 0, pendingAmount: amt
+    });
     totalKg += rowKg; totalAmount += amt;
   }
   var newOrder = {
     shopId: shopId, items: items, totalKg: totalKg, totalAmount: totalAmount,
     date: date, notes: notes, status: 'Pending',
     createdBy: currentUser ? currentUser.user : 'unknown',
-    createdAt: new Date().toISOString(), amountAddedToAccount: false
+    createdAt: new Date().toISOString(), amountAddedToAccount: false,
+    paidAmount: 0, pendingAmount: totalAmount
   };
   var shop = getShopById(shopId);
   var wasOffline = !isOnline;
@@ -1253,7 +1668,8 @@ function saveMultiOrderActual() {
     shopId: newOrder.shopId, items: newOrder.items, totalKg: newOrder.totalKg,
     totalAmount: newOrder.totalAmount, date: newOrder.date, notes: newOrder.notes,
     status: newOrder.status, createdBy: newOrder.createdBy, createdAt: newOrder.createdAt,
-    amountStatus: newOrder.amountStatus || null, amountAddedToAccount: false
+    amountStatus: newOrder.amountStatus || null, amountAddedToAccount: false,
+    paidAmount: 0, pendingAmount: newOrder.totalAmount
   }).then(function(ref) {
     newOrder.id = ref.id; newOrder._offlinePending = false;
   }).catch(function(e) {
@@ -1274,8 +1690,9 @@ function getFarziPendingTotal(shopId) {
     var o = orders[i];
     if (o.shopId != shopId) continue;
     if (o.status !== 'Delivered') continue;
-    if (o.amountStatus !== 'pending') continue;
-    total += parseInt(o.totalAmount) || 0;
+    var pend = parseInt(o.pendingAmount);
+    if (isNaN(pend)) pend = (o.amountStatus === 'pending') ? (parseInt(o.totalAmount) || 0) : 0;
+    total += pend;
   }
   return total;
 }
@@ -1285,7 +1702,9 @@ function getFarziPendingOrders(shopId) {
     var o = orders[i];
     if (o.shopId != shopId) continue;
     if (o.status !== 'Delivered') continue;
-    if (o.amountStatus !== 'pending') continue;
+    var pend = parseInt(o.pendingAmount);
+    if (isNaN(pend)) pend = (o.amountStatus === 'pending') ? (parseInt(o.totalAmount) || 0) : 0;
+    if (pend <= 0) continue;
     list.push(o);
   }
   list.sort(function(a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
@@ -1321,9 +1740,11 @@ function renderPendingAmounts() {
   }
   list.innerHTML = html;
 }
+var currentFarziCustomerDetailShopId = null;
 function openFarziCustomerDetail(shopId) {
   var shop = getShopById(shopId);
   if (!shop) return;
+  currentFarziCustomerDetailShopId = shopId;
   var nameEl = document.getElementById('farziDetailName');
   var mobileEl = document.getElementById('farziDetailMobile');
   if (nameEl) nameEl.textContent = '🔵 ' + shop.name;
@@ -1344,43 +1765,70 @@ function renderFarziDetailOrders(shopId) {
     var itemsText = '';
     for (var j = 0; j < o.items.length; j++) {
       var it = o.items[j];
-      itemsText += '📦 ' + it.product + ' — ' + qtyText(it.maund, it.kg) + (it.amount ? ' (' + formatRs(it.amount) + ')' : '') + '<br>';
+      var itPaid = parseInt(it.paidAmount) || 0;
+      var itPend = parseInt(it.pendingAmount);
+      if (isNaN(itPend)) itPend = (parseInt(it.amount) || 0) - itPaid;
+      var splitInfo = '';
+      if (itPaid > 0 && itPend > 0) {
+        splitInfo = ' <small style="color:#16a34a;">✅ ' + formatRs(itPaid) + '</small> <small style="color:#f59e0b;">⏳ ' + formatRs(itPend) + '</small>';
+      } else if (itPend > 0) {
+        splitInfo = ' <small style="color:#f59e0b;">⏳ ' + formatRs(itPend) + '</small>';
+      } else if (itPaid > 0) {
+        splitInfo = ' <small style="color:#16a34a;">✅ ' + formatRs(itPaid) + '</small>';
+      }
+      itemsText += '📦 ' + it.product + ' — ' + qtyText(it.maund, it.kg) + (it.amount ? ' (' + formatRs(it.amount) + ')' : '') + splitInfo + '<br>';
     }
+    var pendAmt = parseInt(o.pendingAmount);
+    if (isNaN(pendAmt)) pendAmt = parseInt(o.totalAmount) || 0;
     html += '<div class="pending-order-row">' +
       '<div class="por-info">' +
         '<div style="font-weight:700;color:#1e293b;margin-bottom:4px;">Order — ' + formatDateTimeObj(new Date(o.createdAt)) + '</div>' +
         '<div style="font-size:12px;color:#64748b;">' + itemsText + '</div>' +
       '</div>' +
       '<div style="text-align:right;">' +
-        '<div class="por-amount">' + formatRs(o.totalAmount) + '</div>' +
-        '<button class="btn-paid" onclick="markPendingPaid(\'' + o.id + '\')"><i class="fa fa-check"></i> De Diya</button>' +
+        '<div class="por-amount">' + formatRs(pendAmt) + '</div>' +
+        '<div class="por-actions">' +
+          '<button class="btn-paid" onclick="markPendingPaid(\'' + o.id + '\')"><i class="fa fa-check"></i> De Diya</button>' +
+          '<button class="btn-split" onclick="openSplitFromOrder(\'' + o.id + '\')"><i class="fa fa-balance-scale"></i> Split</button>' +
+        '</div>' +
       '</div></div>';
   }
   box.innerHTML = html;
+}
+function openSplitFromOrder(orderId) {
+  var order = null;
+  for (var i = 0; i < orders.length; i++) { if (orders[i].id == orderId) { order = orders[i]; break; } }
+  if (!order) return;
+  openPaymentSplitModal(order);
 }
 function markPendingPaid(orderId) {
   var order = null;
   for (var i = 0; i < orders.length; i++) { if (orders[i].id == orderId) { order = orders[i]; break; } }
   if (!order) return;
-  if (!confirm('Pakka amount de diya?')) return;
+  if (!confirm('Pakka poori amount de diya?')) return;
   order.amountStatus = 'paid';
   order.paidAt = new Date().toISOString();
   order.paidBy = currentUser ? currentUser.user : 'unknown';
+  order.paidAmount = parseInt(order.totalAmount) || 0;
+  order.pendingAmount = 0;
+  for (var i = 0; i < order.items.length; i++) {
+    order.items[i].paidAmount = parseInt(order.items[i].amount) || 0;
+    order.items[i].pendingAmount = 0;
+  }
   if (firebaseReady) {
-    db.collection('orders').doc(String(order.id)).update({ amountStatus: 'paid', paidAt: order.paidAt, paidBy: order.paidBy }).catch(function(e) { console.log(e); });
+    db.collection('orders').doc(String(order.id)).update({
+      amountStatus: 'paid', paidAt: order.paidAt, paidBy: order.paidBy,
+      paidAmount: order.paidAmount, pendingAmount: 0, items: order.items
+    }).catch(function(e) { console.log(e); });
   }
   showToast('✅ Amount paid mark ho gaya', 'success');
   renderFarziDetailOrders(order.shopId);
   var totalEl = document.getElementById('farziDetailTotal');
   if (totalEl) totalEl.textContent = formatRs(getFarziPendingTotal(order.shopId));
   renderPendingAmounts();
-  
-  // ✅ NAYA: WhatsApp preview trigger
   var shop = getShopById(order.shopId);
   if (shop && shop.mobile) {
     setTimeout(function() { openWhatsappFarziPaidModal(order, shop); }, 500);
-  } else {
-    showToast('⚠️ Shopkeeper ka mobile number nahi hai', 'warning', 3000);
   }
 }
 function closeFarziDeliverModal() { document.getElementById('farziDeliverModal').classList.remove('active'); currentFarziDeliverOrderId = null; }
@@ -1400,28 +1848,40 @@ function openFarziDeliverModal(orderId) {
 function markFarziDelivered(status, btn) {
   if (!currentFarziDeliverOrderId) return;
   var orderId = currentFarziDeliverOrderId;
-  if (btn) disableButton(btn, 'Saving...');
   var order = null;
   for (var i = 0; i < orders.length; i++) { if (orders[i].id == orderId) { order = orders[i]; break; } }
-  if (!order) { closeFarziDeliverModal(); if (btn) enableButton(btn); return; }
-  if (status === 'paid') {
-    order.amountStatus = 'paid'; order.paidAt = new Date().toISOString();
-    order.paidBy = currentUser ? currentUser.user : 'unknown';
-  } else { order.amountStatus = 'pending'; }
+  if (!order) { closeFarziDeliverModal(); return; }
+  if (status === 'pending') {
+    // Split Modal kholo
+    closeFarziDeliverModal();
+    if (btn) enableButton(btn);
+    setTimeout(function() { openPaymentSplitModal(order); }, 300);
+    return;
+  }
+  // status === 'paid' — poora paid
+  if (btn) disableButton(btn, 'Saving...');
+  order.amountStatus = 'paid';
+  order.paidAt = new Date().toISOString();
+  order.paidBy = currentUser ? currentUser.user : 'unknown';
+  order.paidAmount = parseInt(order.totalAmount) || 0;
+  order.pendingAmount = 0;
+  for (var i = 0; i < order.items.length; i++) {
+    order.items[i].paidAmount = parseInt(order.items[i].amount) || 0;
+    order.items[i].pendingAmount = 0;
+  }
   if (firebaseReady) {
-    db.collection('orders').doc(String(order.id)).update({ amountStatus: order.amountStatus, paidAt: order.paidAt || null, paidBy: order.paidBy || null }).catch(function(e) { console.log(e); });
+    db.collection('orders').doc(String(order.id)).update({
+      amountStatus: 'paid', paidAt: order.paidAt, paidBy: order.paidBy,
+      paidAmount: order.paidAmount, pendingAmount: 0, items: order.items
+    }).catch(function(e) { console.log(e); });
   }
   var shop = getShopById(order.shopId);
   setTimeout(function() {
     if (btn) enableButton(btn); closeFarziDeliverModal();
-    showToast(status === 'paid' ? '✅ Amount paid mark' : '⏳ Pending mein daala', 'success');
+    showToast('✅ Amount paid mark', 'success');
     renderPendingAmounts(); renderDashboard();
-    
-    // ✅ NAYA: WhatsApp preview trigger
     if (shop && shop.mobile) {
-      setTimeout(function() { openWhatsappFarziDeliverModal(order, shop, status); }, 500);
-    } else {
-      showToast('⚠️ Shopkeeper ka mobile number nahi hai', 'warning', 3000);
+      setTimeout(function() { openWhatsappFarziDeliverModal(order, shop, 'paid'); }, 500);
     }
   }, 200);
 }
@@ -1432,8 +1892,6 @@ function filterShopkeepers(category, btn) {
   if (btn) btn.classList.add('active');
   renderShopkeepers();
 }
-
-// ✅ NAYA: Farzi order deliver par WhatsApp message
 function openWhatsappFarziDeliverModal(order, shop, status) {
   if (!shop || !shop.mobile) return;
   var number = formatWaNumber(shop.mobile);
@@ -1455,8 +1913,6 @@ function openWhatsappFarziDeliverModal(order, shop, status) {
   if (msgBox) msgBox.textContent = msg;
   if (modal) modal.classList.add('active');
 }
-
-// ✅ NAYA: Amount Pending "De Diya" par WhatsApp message
 function openWhatsappFarziPaidModal(order, shop) {
   if (!shop || !shop.mobile) return;
   var number = formatWaNumber(shop.mobile);
@@ -1479,7 +1935,6 @@ function openWhatsappFarziPaidModal(order, shop) {
   if (msgBox) msgBox.textContent = msg;
   if (modal) modal.classList.add('active');
 }
-
 function openWhatsappShareModal(order, shop) {
   if (!shop || !shop.mobile) return;
   var number = formatWaNumber(shop.mobile); if (!number) return;
@@ -1507,8 +1962,10 @@ function openWhatsappDeliveredShareModal(order, shop) {
   for (var i = 0; i < order.items.length; i++) {
     var it = order.items[i];
     var dm = parseInt(it.deliveredMaund) || 0, dk = parseInt(it.deliveredKg) || 0;
-    if (dm > 0 || dk > 0) lines.push('• ' + it.product + ' — ' + qtyText(dm, dk));
-    else { var m = parseInt(it.maund) || 0, k = parseInt(it.kg) || 0; lines.push('• ' + it.product + ' — ' + qtyText(m, k)); }
+    var amt = parseInt(it.amount) || 0;
+    var amtText = amt > 0 ? ' — ' + formatRs(amt) : '';
+    if (dm > 0 || dk > 0) lines.push('• ' + it.product + ' — ' + qtyText(dm, dk) + amtText);
+    else { var m = parseInt(it.maund) || 0, k = parseInt(it.kg) || 0; lines.push('• ' + it.product + ' — ' + qtyText(m, k) + amtText); }
   }
   var itemsText = lines.join('\n');
   var totalAmtText = order.totalAmount ? '\n\n💰 Total Amount: ' + formatRs(order.totalAmount) : '';
@@ -2179,8 +2636,10 @@ function renderPendingShopkeeperList() {
     var o = orders[i];
     if (o.date !== today) continue;
     if (o.status !== 'Pending' && o.status !== 'Partial') continue;
-    if (!grouped[o.shopId]) grouped[o.shopId] = { count: 0, usernames: {} };
+    if (!grouped[o.shopId]) grouped[o.shopId] = { count: 0, usernames: {}, totalAmount: 0 };
     grouped[o.shopId].count++;
+    var amt = parseInt(o.totalAmount) || 0;
+    grouped[o.shopId].totalAmount += amt;
     if (o.createdBy) grouped[o.shopId].usernames[o.createdBy] = true;
   }
   var shopIds = Object.keys(grouped);
@@ -2192,6 +2651,7 @@ function renderPendingShopkeeperList() {
     for (var i = 0; i < shopkeepers.length; i++) { if (shopkeepers[i].id == sid) { shopName = shopkeepers[i].name; shopObj = shopkeepers[i]; } }
     for (var i = 0; i < orders.length; i++) { if (orders[i].shopId == sid && orders[i]._offlinePending) { hasOffline = true; break; } }
     var count = grouped[sid].count;
+    var totalAmt = grouped[sid].totalAmount;
     var summaryText = getShopOrderSummaryText(sid);
     var offlineClass = hasOffline ? ' offline-pending' : '';
     var farziClass = (shopObj && shopObj.category === 'farzi') ? ' farzi-card' : '';
@@ -2202,6 +2662,7 @@ function renderPendingShopkeeperList() {
       '<div class="psn-info">' +
         '<span class="name-text"><i class="fa fa-store shop-icon"></i> ' + shopName + ' ' + userBadgesHtml + '</span>' +
         (summaryText ? '<span class="psn-summary">📦 ' + summaryText + '</span>' : '') +
+        (totalAmt > 0 ? '<span class="psn-amount">💰 ' + formatRs(totalAmt) + '</span>' : '') +
       '</div>' +
       '<span><span class="order-count">' + count + '</span><i class="fa fa-chevron-right arrow-icon"></i></span></div>';
   }
@@ -2230,8 +2691,9 @@ function openPendingShopModal(shopId) {
       var remK = (parseInt(it.kg) || 0) - (parseInt(it.deliveredKg) || 0);
       if (remM <= 0 && remK <= 0) continue;
       var pName = it.product;
-      if (!productMap[pName]) { productMap[pName] = { maund: 0, kg: 0, kgList: [], orderIds: [] }; productOrder.push(pName); }
+      if (!productMap[pName]) { productMap[pName] = { maund: 0, kg: 0, kgList: [], orderIds: [], amount: 0 }; productOrder.push(pName); }
       productMap[pName].maund += remM; productMap[pName].kg += remK;
+      productMap[pName].amount += (parseInt(it.amount) || 0);
       if (remK > 0) productMap[pName].kgList.push(remK);
       if (productMap[pName].orderIds.indexOf(o.id) === -1) productMap[pName].orderIds.push(o.id);
     }
@@ -2240,7 +2702,7 @@ function openPendingShopModal(shopId) {
   for (var p = 0; p < productOrder.length; p++) {
     var pm = productMap[productOrder[p]];
     grandTotalKg += (pm.maund * 40) + pm.kg;
-    currentPendingProducts.push({ product: productOrder[p], maund: pm.maund, kg: pm.kg, kgList: pm.kgList.slice(), orderIds: pm.orderIds.slice() });
+    currentPendingProducts.push({ product: productOrder[p], maund: pm.maund, kg: pm.kg, kgList: pm.kgList.slice(), orderIds: pm.orderIds.slice(), amount: pm.amount });
   }
   var linesHtml = '';
   for (var p = 0; p < currentPendingProducts.length; p++) {
@@ -2249,9 +2711,10 @@ function openPendingShopModal(shopId) {
     if (pd.maund > 0) qtyParts.push(pd.maund + ' maund');
     for (var q = 0; q < pd.kgList.length; q++) qtyParts.push(pd.kgList[q] + ' kg');
     var qtyStr = qtyParts.join(', ') || '0 kg';
+    var amtTag = pd.amount > 0 ? '<span class="amt-tag">' + formatRs(pd.amount) + '</span>' : '';
     linesHtml += '<div class="product-line selectable-line">' +
       '<label class="deliver-checkbox"><input type="checkbox" class="pending-item-check" data-idx="' + p + '" onchange="updateDeliverBtn()" /></label>' +
-      '<div class="product-line-info"><span class="p-name">📦 ' + pd.product + '</span><span class="p-qty">' + qtyStr + '</span></div>' +
+      '<div class="product-line-info"><span class="p-name">📦 ' + pd.product + '</span><span class="p-qty">' + qtyStr + '</span>' + amtTag + '</div>' +
     '</div>';
   }
   var deliverBtnHtml = can('deliver') ? '<button class="btn primary small deliver-selected-btn" onclick="deliverSelectedItems(this)" id="deliverSelectedBtn" disabled><i class="fa fa-check"></i> Deliver (<span id="deliverCount">0</span>)</button>' : '';
@@ -2776,7 +3239,7 @@ function openRouteModal(routeId) {
     var prods = shopGroup[sid]; var shopTotalKg = 0;
     var productMap = {}, productOrder2 = [];
     for (var p = 0; p < prods.length; p++) {
-      var pName = prods[p]; var kgs = [], mTot = 0;
+      var pName = prods[p]; var kgs = [], mTot = 0, pAmt = 0;
       for (var j = 0; j < orders.length; j++) {
         var o = orders[j];
         if (o.shopId != sid) continue;
@@ -2787,11 +3250,13 @@ function openRouteModal(routeId) {
           var remK = (parseInt(oi.kg) || 0) - (parseInt(oi.deliveredKg) || 0);
           if (remM <= 0 && remK <= 0) continue;
           mTot += remM; shopTotalKg += (remM * 40) + remK;
+          pAmt += (parseInt(oi.amount) || 0);
           if (remK > 0) kgs.push(remK);
         }
       }
-      if (!productMap[pName]) { productMap[pName] = { maund: 0, kgList: [] }; productOrder2.push(pName); }
+      if (!productMap[pName]) { productMap[pName] = { maund: 0, kgList: [], amount: 0 }; productOrder2.push(pName); }
       productMap[pName].maund += mTot;
+      productMap[pName].amount += pAmt;
       for (var x = 0; x < kgs.length; x++) productMap[pName].kgList.push(kgs[x]);
     }
     if (productOrder2.length === 0) continue;
@@ -2802,7 +3267,8 @@ function openRouteModal(routeId) {
       if (pdata.maund > 0) qtyParts.push(pdata.maund + ' maund');
       for (var q = 0; q < pdata.kgList.length; q++) qtyParts.push(pdata.kgList[q] + ' kg');
       var qtyStr = qtyParts.join(', ') || '0 kg';
-      itemsHtml += '<div class="route-product-line"><span class="rp-name">📦 ' + pName + '</span><span class="rp-qty">' + qtyStr + '</span></div>';
+      var amtTag = pdata.amount > 0 ? '<span class="rp-qty" style="background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e;border-color:#fcd34d;">' + formatRs(pdata.amount) + '</span>' : '';
+      itemsHtml += '<div class="route-product-line"><span class="rp-name">📦 ' + pName + '</span><span class="rp-qty">' + qtyStr + '</span>' + amtTag + '</div>';
     }
     var deliverBtn = can('deliver') ? '<button class="btn small success route-shop-deliver-btn" onclick="openDeliverConfirmModal(\'' + route.id + '\', \'' + sid + '\')"><i class="fa fa-check"></i> Delivered</button>' : '';
     var farziTag = (shop.category === 'farzi') ? ' <span class="farzi-badge">FARZI</span>' : '';
@@ -3085,9 +3551,10 @@ function renderOrdersPage() {
     list.innerHTML = '<div class="empty"><i class="fa fa-truck"></i>Is din koi order nahi.</div>';
     return;
   }
-  var totalKg = 0;
+  var totalKg = 0; var totalAmount = 0;
   for (var i = 0; i < filtered.length; i++) {
     var o = filtered[i];
+    totalAmount += parseInt(o.totalAmount) || 0;
     for (var j = 0; j < o.items.length; j++) {
       var it = o.items[j];
       var remM = (parseInt(it.maund) || 0) - (parseInt(it.deliveredMaund) || 0);
@@ -3095,7 +3562,8 @@ function renderOrdersPage() {
       totalKg += (remM * 40) + remK;
     }
   }
-  summary.innerHTML = '<div><p>' + formatDate(dateVal) + ' ka baqi load</p><div class="big-num">' + totalKgText(totalKg) + '</div></div>';
+  summary.innerHTML = '<div><p>' + formatDate(dateVal) + ' ka baqi load</p><div class="big-num">' + totalKgText(totalKg) + '</div></div>' +
+    (totalAmount > 0 ? '<div><p>Total Amount</p><div class="big-num">' + formatRs(totalAmount) + '</div></div>' : '');
   var grouped = {};
   for (var i = 0; i < filtered.length; i++) {
     var sid = filtered[i].shopId;
@@ -3132,7 +3600,7 @@ function renderOrdersPage() {
         orderTotalKg += (remM * 40) + remK;
         var deliveredText = '';
         if (it.deliveredMaund > 0 || it.deliveredKg > 0) deliveredText = '<div class="p-delivered">✓ ' + qtyText(it.deliveredMaund, it.deliveredKg) + ' deliver</div>';
-        var amountText = it.amount ? ' <span class="amt-tag">' + formatRs(it.amount) + '</span>' : '';
+        var amountText = '<span class="amt-tag">' + formatRs(it.amount || 0) + '</span>';
         var action = can('deliver') ? '<button class="btn small success" onclick="openDeliverModal(\'' + o.id + '\', \'' + it.product.replace(/'/g, "\\'") + '\')"><i class="fa fa-check"></i> Delivered</button>' : '';
         orderItemsHtml += '<div class="product-line"><div class="product-line-info">' +
           '<span class="p-name">📦 ' + it.product + '</span>' + amountText +
@@ -3156,14 +3624,16 @@ function renderOrdersPage() {
               '<p style="font-size:12px;color:#64748b;"><i class="fa fa-calendar"></i> ' + getOrderDateTimeText(o) + '</p>' +
               '<p style="font-size:12px;color:#64748b;">👤 ' + (function() { var u = findUserByUsername(o.createdBy); return u ? getUserDisplayName(u) : (o.createdBy || 'Unknown'); })() + '</p>' +
             '</div></div>' +
-          '<span class="shop-group-total">' + totalKgText(orderTotalKg) + '</span>' +
+          '<span class="shop-group-total">' + totalKgText(orderTotalKg) + ' • ' + formatRs(o.totalAmount || 0) + '</span>' +
         '</div>' + orderItemsHtml + editCancelHtml + '</div>';
     }
+    var shopTotalAmt = 0;
+    for (var i = 0; i < sOrders.length; i++) shopTotalAmt += parseInt(sOrders[i].totalAmount) || 0;
     html += '<div class="box" style="margin-bottom:14px;">' +
-      '<div class="box-head">' +
+      '<div class="box-head" onclick="openOrderDetailModal(\'' + shopId + '\')" style="cursor:pointer;">' +
         '<div><h2 style="font-size:16px;"><i class="fa fa-store"></i> ' + shopName + farziTag + '</h2>' +
         '<p style="font-size:13px;color:#64748b;"><i class="fa fa-map-marker-alt"></i> ' + shopAddress + ' • <i class="fa fa-phone"></i> ' + shopMobile + '</p></div>' +
-        '<span class="pill">' + totalKgText(shopKg) + '</span>' +
+        '<span class="pill">' + totalKgText(shopKg) + ' • ' + formatRs(shopTotalAmt) + '</span>' +
       '</div>' + ordersHtml + '</div>';
   }
   list.innerHTML = html;
@@ -3539,9 +4009,10 @@ function renderDelivery() {
     var shopId = keys[k]; var shopName = 'Unknown', shopMobile = ''; var shopObj = null;
     for (var i = 0; i < shopkeepers.length; i++) { if (shopkeepers[i].id == shopId) { shopName = shopkeepers[i].name; shopMobile = shopkeepers[i].mobile; shopObj = shopkeepers[i]; } }
     var isFarzi = shopObj && shopObj.category === 'farzi';
-    var sOrders = grouped[shopId]; var totalKg = 0;
+    var sOrders = grouped[shopId]; var totalKg = 0; var totalAmt = 0;
     for (var i = 0; i < sOrders.length; i++) {
       var o = sOrders[i];
+      totalAmt += parseInt(o.totalAmount) || 0;
       for (var j = 0; j < o.items.length; j++) {
         var it = o.items[j];
         var remM = (parseInt(it.maund) || 0) - (parseInt(it.deliveredMaund) || 0);
@@ -3559,9 +4030,10 @@ function renderDelivery() {
         if (remM <= 0 && remK <= 0) continue;
         var deliveredText = '';
         if (it.deliveredMaund > 0 || it.deliveredKg > 0) deliveredText = '<div class="p-delivered">✓ ' + qtyText(it.deliveredMaund, it.deliveredKg) + ' deliver</div>';
+        var amtTag = '<span class="amt-tag">' + formatRs(it.amount || 0) + '</span>';
         var action = can('deliver') ? '<button class="btn small success" onclick="openDeliverModal(\'' + o.id + '\', \'' + it.product.replace(/'/g, "\\'") + '\')"><i class="fa fa-check"></i> Delivered</button>' : '';
         linesHtml += '<div class="product-line"><div class="product-line-info order-line-with-user">' +
-          userBadge + '<span class="p-name">📦 ' + it.product + '</span>' +
+          userBadge + '<span class="p-name">📦 ' + it.product + '</span>' + amtTag +
           '<span class="p-qty">' + qtyText(remM, remK) + '</span>' + deliveredText +
           '</div>' + action + '</div>';
       }
@@ -3571,7 +4043,7 @@ function renderDelivery() {
     html += '<div class="shop-group' + offlineClass + (isFarzi ? ' farzi-card' : '') + '"><div class="shop-group-head">' +
       '<div><h4><i class="fa fa-store"></i> ' + shopName + farziTag + '</h4>' +
       '<p><i class="fa fa-phone"></i> ' + shopMobile + '</p></div>' +
-      '<span class="shop-group-total">' + totalKgText(totalKg) + '</span></div>' + linesHtml + '</div>';
+      '<span class="shop-group-total">' + totalKgText(totalKg) + (totalAmt > 0 ? ' • ' + formatRs(totalAmt) : '') + '</span></div>' + linesHtml + '</div>';
   }
   list.innerHTML = html;
 }
@@ -3632,25 +4104,29 @@ function renderSalesReport() {
     }
     filtered.push(o);
   }
-  var totalOrders = filtered.length, totalKg = 0, totalProducts = 0;
+  var totalOrders = filtered.length, totalKg = 0, totalProducts = 0, totalAmount = 0;
   var productMap = {}, shopMap = {};
   for (var i = 0; i < filtered.length; i++) {
     var o = filtered[i]; var orderKg = 0;
     for (var j = 0; j < o.items.length; j++) {
       var it = o.items[j];
       var m = parseInt(it.maund) || 0, k = parseInt(it.kg) || 0;
+      var amt = parseInt(it.amount) || 0;
       if (prodFilter !== 'all' && it.product !== prodFilter) continue;
       var rowKg = m * 40 + k; orderKg += rowKg; totalProducts++;
-      if (!productMap[it.product]) productMap[it.product] = { kg: 0, orders: 0 };
-      productMap[it.product].kg += rowKg; productMap[it.product].orders++;
+      totalAmount += amt;
+      if (!productMap[it.product]) productMap[it.product] = { kg: 0, orders: 0, amount: 0 };
+      productMap[it.product].kg += rowKg; productMap[it.product].orders++; productMap[it.product].amount += amt;
     }
     totalKg += orderKg;
-    if (!shopMap[o.shopId]) shopMap[o.shopId] = { orders: 0, kg: 0 };
+    if (!shopMap[o.shopId]) shopMap[o.shopId] = { orders: 0, kg: 0, amount: 0 };
     shopMap[o.shopId].orders++; shopMap[o.shopId].kg += orderKg;
+    shopMap[o.shopId].amount += parseInt(o.totalAmount) || 0;
   }
   document.getElementById('salesTotalOrders').textContent = totalOrders;
   document.getElementById('salesTotalLoad').textContent = totalKgText(totalKg);
   document.getElementById('salesTotalProducts').textContent = totalProducts;
+  // Total amount cards ke baad show karo (existing HTML mein total amount ke liye card nahi, isliye hum total load card mein hi dikhayenge — ya totalProducts card modify karo)
   var prodList = document.getElementById('salesProductWiseList');
   var prodKeys = Object.keys(productMap);
   prodKeys.sort(function(a, b) { return productMap[b].kg - productMap[a].kg; });
@@ -3662,7 +4138,7 @@ function renderSalesReport() {
       var pName = prodKeys[p]; var pd = productMap[pName];
       html += '<div class="sales-row" onclick="openSalesProductDetail(\'' + pName.replace(/'/g, "\\'") + '\')">' +
         '<div class="sr-name"><i class="fa fa-box"></i> ' + pName + '</div>' +
-        '<div class="sr-stats"><span class="sr-badge">' + totalKgText(pd.kg) + '</span><span class="sr-badge blue">' + pd.orders + ' orders</span><i class="fa fa-chevron-right sr-arrow"></i></div></div>';
+        '<div class="sr-stats"><span class="sr-badge">' + totalKgText(pd.kg) + '</span><span class="sr-badge blue">' + pd.orders + ' orders</span>' + (pd.amount > 0 ? '<span class="sr-badge amber">' + formatRs(pd.amount) + '</span>' : '') + '<i class="fa fa-chevron-right sr-arrow"></i></div></div>';
     }
     prodList.innerHTML = html;
   }
@@ -3678,7 +4154,7 @@ function renderSalesReport() {
       for (var i = 0; i < shopkeepers.length; i++) { if (shopkeepers[i].id == sid) { shopName = shopkeepers[i].name; break; } }
       html2 += '<div class="sales-row" onclick="openSalesShopDetail(\'' + sid + '\')">' +
         '<div class="sr-name"><i class="fa fa-store"></i> ' + shopName + '</div>' +
-        '<div class="sr-stats"><span class="sr-badge">' + totalKgText(sd.kg) + '</span><span class="sr-badge blue">' + sd.orders + ' orders</span><i class="fa fa-chevron-right sr-arrow"></i></div></div>';
+        '<div class="sr-stats"><span class="sr-badge">' + totalKgText(sd.kg) + '</span><span class="sr-badge blue">' + sd.orders + ' orders</span>' + (sd.amount > 0 ? '<span class="sr-badge amber">' + formatRs(sd.amount) + '</span>' : '') + '<i class="fa fa-chevron-right sr-arrow"></i></div></div>';
     }
     shopList.innerHTML = html2;
   }
@@ -3704,7 +4180,8 @@ function openSalesProductDetail(productName) {
       var fo = filtered[i]; var shopName = 'Unknown';
       for (var j = 0; j < shopkeepers.length; j++) { if (shopkeepers[j].id == fo.order.shopId) { shopName = shopkeepers[j].name; break; } }
       var it = fo.item;
-      html += '<div class="sales-detail-row"><div><div style="font-weight:700;color:#1e293b;">' + shopName + '</div><div class="sd-date">' + formatDate(fo.order.date) + '</div></div><div class="sd-total">' + qtyText(it.maund, it.kg) + '</div></div>';
+      var amtTag = it.amount ? ' <span class="sd-total">' + formatRs(it.amount) + '</span>' : '';
+      html += '<div class="sales-detail-row"><div><div style="font-weight:700;color:#1e293b;">' + shopName + '</div><div class="sd-date">' + formatDate(fo.order.date) + '</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;"><div class="sd-total">' + qtyText(it.maund, it.kg) + '</div>' + amtTag + '</div></div>';
     }
     body.innerHTML = html;
   }
@@ -3738,7 +4215,8 @@ function openSalesShopDetail(shopId) {
         var it = o.items[j];
         var rowKg = (parseInt(it.maund) || 0) * 40 + (parseInt(it.kg) || 0);
         totalKg += rowKg;
-        itemsHtml += '<div class="sales-detail-row"><div class="sd-items">📦 ' + it.product + '</div><div class="sd-total">' + qtyText(it.maund, it.kg) + '</div></div>';
+        var amtTag = it.amount ? ' <span class="sd-total">' + formatRs(it.amount) + '</span>' : '';
+        itemsHtml += '<div class="sales-detail-row"><div class="sd-items">📦 ' + it.product + '</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><div class="sd-total">' + qtyText(it.maund, it.kg) + '</div>' + amtTag + '</div></div>';
       }
       html += '<div style="margin-bottom:14px;border-bottom:1px dashed #e2e8f0;padding-bottom:10px;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
@@ -3776,11 +4254,15 @@ function renderHistory() {
     var o = filtered[i]; var shopName = 'Unknown';
     for (var j = 0; j < shopkeepers.length; j++) { if (shopkeepers[j].id == o.shopId) shopName = shopkeepers[j].name; }
     var itemsHtml = '';
-    for (var j = 0; j < o.items.length; j++) itemsHtml += '<p>• ' + o.items[j].product + ' — <b>' + qtyText(o.items[j].maund, o.items[j].kg) + '</b></p>';
-    html += '<div class="item delivered-item"><div class="item-info">' +
+    for (var j = 0; j < o.items.length; j++) {
+      var it = o.items[j];
+      var amtTag = it.amount ? ' <b>' + formatRs(it.amount) + '</b>' : '';
+      itemsHtml += '<p>• ' + it.product + ' — <b>' + qtyText(it.maund, it.kg) + '</b>' + amtTag + '</p>';
+    }
+    html += '<div class="item delivered-item" onclick="openOrderDetailModal(\'' + o.shopId + '\', {readOnly:true})" style="cursor:pointer;"><div class="item-info">' +
       '<h4>' + getUserBadgeHtml(o.createdBy, 'tiny') + ' ' + shopName + '</h4>' + itemsHtml +
       '<p class="date-line"><i class="fa fa-calendar"></i> ' + formatDate(o.date) + '</p>' +
-      '<span class="badge delivered">Delivered</span></div></div>';
+      '<span class="badge delivered">Delivered' + (o.totalAmount ? ' • ' + formatRs(o.totalAmount) : '') + '</span></div></div>';
   }
   list.innerHTML = html;
 }
