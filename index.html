@@ -931,6 +931,45 @@
   </div>
 </div>
 
+<!-- ============================================== -->
+<!-- NAYA: Order Detail Modal (Feature #1) -->
+<!-- ============================================== -->
+<div id="orderDetailModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeOrderDetailModal()">&times;</span>
+    <h2 id="orderDetailTitle">Order Detail</h2>
+    <div id="orderDetailBody"></div>
+  </div>
+</div>
+
+<!-- ============================================== -->
+<!-- NAYA: Payment Split Modal (Feature #2) -->
+<!-- ============================================== -->
+<div id="paymentSplitModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closePaymentSplitModal()">&times;</span>
+    <h2><i class="fa fa-money-bill-wave" style="color:#16a34a;"></i> Payment Split Karein</h2>
+    <p class="hint" id="splitShopName" style="font-weight:700;color:#166534;"></p>
+    <div class="amount-total-box">
+      <span>Order Total:</span>
+      <strong id="splitTotalAmount">Rs. 0</strong>
+    </div>
+    <div id="splitItemsList"></div>
+    <div class="split-total-section">
+      <div class="split-row">
+        <label><b>Diya (Rs.):</b></label>
+        <input type="number" id="splitPaidInput" min="0" placeholder="0" oninput="syncSplitFromPaidInput()" />
+      </div>
+      <div class="split-row">
+        <label><b>Pending:</b></label>
+        <strong id="splitPendingText" style="color:#f59e0b;font-size:18px;">Rs. 0</strong>
+      </div>
+    </div>
+    <button class="btn primary big" onclick="savePaymentSplit(this)"><i class="fa fa-save"></i> Split Save Karein</button>
+    <button class="btn big" onclick="closePaymentSplitModal()"><i class="fa fa-times"></i> Cancel</button>
+  </div>
+</div>
+
 <script src="script.js"></script>
 </body>
 </html>
