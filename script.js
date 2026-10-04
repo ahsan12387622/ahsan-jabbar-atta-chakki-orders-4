@@ -40,6 +40,13 @@ var currentQueueReminderCount = 0;
 var currentEditingWasooliId = null;
 var currentDeletingWasooliId = null;
 
+// =====================================================
+// Feature #4: MULTI-TENANT VARIABLES
+// =====================================================
+var currentBusinessId = null;
+var currentBusinessName = null;
+var LEGACY_BUSINESS_ID = 'legacy_biz_001';
+
 // Feature #1 & #2 ke naye variables
 var currentOrderDetailShopId = null;
 var currentOrderDetailReadOnly = false;
@@ -122,6 +129,13 @@ var DEFAULT_DASHBOARD = [
   { key: 'load', label: 'Aaj Ka Load', show: true, size: 100, view: 'list' },
   { key: 'routes', label: 'Aaj Ke Routes', show: true, size: 100, view: 'list' }
 ];
+
+// =====================================================
+// Feature #4: Business ID Generator
+// =====================================================
+function generateBusinessId() {
+  return 'biz_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+}
 
 function formatRs(amount) {
   var num = parseInt(amount) || 0;
@@ -322,6 +336,7 @@ function syncOfflineAccountsQueue() {
       var copy = JSON.parse(JSON.stringify(entry));
       delete copy.id;
       delete copy._offlinePending;
+      if (!copy.businessId) copy.businessId = currentBusinessId;
       db.collection('accounts').add(copy).then(function() {
         console.log('✅ Offline account synced');
       }).catch(function(e) { console.log('❌ Offline account sync error:', e); stillPending.push(entry); });
@@ -342,89 +357,107 @@ function loadAccountsQueueFromLocalStorage() {
     if (q) offlineAccountsQueue = JSON.parse(q) || [];
   } catch (e) { offlineAccountsQueue = []; }
 }
+
+// =====================================================
+// Feature #4: Business-filtered listeners
+// =====================================================
 function setupRealtimeListeners() {
   if (!firebaseReady) return;
+  if (!currentBusinessId) { console.log('⚠️ No businessId — listeners skipped'); return; }
+
   if (!snapshotListeners.shopkeepers) {
-    snapshotListeners.shopkeepers = db.collection('shopkeepers').onSnapshot(function(snap) {
-      shopkeepers = []; snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; shopkeepers.push(d); });
-      refreshAllViews();
-    }, function(err) { console.log('Shopkeepers listener:', err); });
+    snapshotListeners.shopkeepers = db.collection('shopkeepers')
+      .where('businessId', '==', currentBusinessId)
+      .onSnapshot(function(snap) {
+        shopkeepers = []; snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; shopkeepers.push(d); });
+        refreshAllViews();
+      }, function(err) { console.log('Shopkeepers listener:', err); });
   }
   if (!snapshotListeners.orders) {
-    snapshotListeners.orders = db.collection('orders').onSnapshot(function(snap) {
-      orders = []; snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; d._offlinePending = false; orders.push(d); });
-      offlineOrdersQueue = []; refreshAllViews();
-    }, function(err) { console.log('Orders listener:', err); });
+    snapshotListeners.orders = db.collection('orders')
+      .where('businessId', '==', currentBusinessId)
+      .onSnapshot(function(snap) {
+        orders = []; snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; d._offlinePending = false; orders.push(d); });
+        offlineOrdersQueue = []; refreshAllViews();
+      }, function(err) { console.log('Orders listener:', err); });
   }
   if (!snapshotListeners.products) {
-    snapshotListeners.products = db.collection('settings').doc('products').onSnapshot(function(doc) {
+    snapshotListeners.products = db.collection('settings').doc('products_' + currentBusinessId).onSnapshot(function(doc) {
       if (doc.exists) products = doc.data().list || products; refreshAllViews();
     }, function(err) { console.log('Products listener:', err); });
   }
   if (!snapshotListeners.business) {
-    snapshotListeners.business = db.collection('settings').doc('business').onSnapshot(function(doc) {
+    snapshotListeners.business = db.collection('settings').doc('business_' + currentBusinessId).onSnapshot(function(doc) {
       if (doc.exists) { var d = doc.data(); if (d.bizName) settings.bizName = d.bizName; } applySettings();
     }, function(err) { console.log('Business listener:', err); });
   }
   if (!snapshotListeners.users) {
-    snapshotListeners.users = db.collection('users').onSnapshot(function(snap) {
-      users = []; snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; users.push(d); });
-      if (currentUser) { for (var i = 0; i < users.length; i++) { if (users[i].id === currentUser.id) { currentUser = users[i]; localStorage.setItem('currentUser', JSON.stringify(currentUser)); break; } } }
-      if (isAdmin()) renderUsers();
-      refreshAllViews();
-    }, function(err) { console.log('Users listener:', err); });
+    snapshotListeners.users = db.collection('users')
+      .where('businessId', '==', currentBusinessId)
+      .onSnapshot(function(snap) {
+        users = []; snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; users.push(d); });
+        if (currentUser) { for (var i = 0; i < users.length; i++) { if (users[i].id === currentUser.id) { currentUser = users[i]; localStorage.setItem('currentUser', JSON.stringify(currentUser)); break; } } }
+        if (isAdmin()) renderUsers();
+        refreshAllViews();
+      }, function(err) { console.log('Users listener:', err); });
   }
   if (!snapshotListeners.routes) {
-    snapshotListeners.routes = db.collection('routes').onSnapshot(function(snap) {
-      routes = []; var seenKeys = {};
-      snap.forEach(function(doc) {
-        var d = doc.data(); d.id = doc.id;
-        if (!d.items || !Array.isArray(d.items)) {
-          d.items = [];
-          if (d.shopIds && Array.isArray(d.shopIds)) {
-            var today = todayStr();
-            for (var i = 0; i < d.shopIds.length; i++) {
-              var sid = d.shopIds[i]; var added = {};
-              for (var j = 0; j < orders.length; j++) {
-                var o = orders[j];
-                if (o.shopId != sid) continue; if (o.date !== today) continue;
-                if (o.status !== 'Pending' && o.status !== 'Partial') continue;
-                for (var k = 0; k < o.items.length; k++) { var p = o.items[k].product; if (!added[p]) { d.items.push({ shopId: sid, product: p }); added[p] = true; } }
+    snapshotListeners.routes = db.collection('routes')
+      .where('businessId', '==', currentBusinessId)
+      .onSnapshot(function(snap) {
+        routes = []; var seenKeys = {};
+        snap.forEach(function(doc) {
+          var d = doc.data(); d.id = doc.id;
+          if (!d.items || !Array.isArray(d.items)) {
+            d.items = [];
+            if (d.shopIds && Array.isArray(d.shopIds)) {
+              var today = todayStr();
+              for (var i = 0; i < d.shopIds.length; i++) {
+                var sid = d.shopIds[i]; var added = {};
+                for (var j = 0; j < orders.length; j++) {
+                  var o = orders[j];
+                  if (o.shopId != sid) continue; if (o.date !== today) continue;
+                  if (o.status !== 'Pending' && o.status !== 'Partial') continue;
+                  for (var k = 0; k < o.items.length; k++) { var p = o.items[k].product; if (!added[p]) { d.items.push({ shopId: sid, product: p }); added[p] = true; } }
+                }
               }
+              saveToFirebase('routes', d.id, d);
             }
-            saveToFirebase('routes', d.id, d);
+            d.shopIds = undefined;
           }
-          d.shopIds = undefined;
-        }
-        var routeKey = d.name + '|' + (d.createdAt || '');
-        if (seenKeys[routeKey]) { console.log('⚠️ Duplicate route skip:', d.name); return; }
-        seenKeys[routeKey] = true; routes.push(d);
-      });
-      refreshAllViews();
-    }, function(err) { console.log('Routes listener:', err); });
+          var routeKey = d.name + '|' + (d.createdAt || '');
+          if (seenKeys[routeKey]) { console.log('⚠️ Duplicate route skip:', d.name); return; }
+          seenKeys[routeKey] = true; routes.push(d);
+        });
+        refreshAllViews();
+      }, function(err) { console.log('Routes listener:', err); });
   }
   if (!snapshotListeners.accounts) {
-    snapshotListeners.accounts = db.collection('accounts').onSnapshot(function(snap) {
-      accounts = []; snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; accounts.push(d); });
-      mergeOfflineAccounts();
-      refreshAllViews();
-    }, function(err) { console.log('Accounts listener:', err); });
+    snapshotListeners.accounts = db.collection('accounts')
+      .where('businessId', '==', currentBusinessId)
+      .onSnapshot(function(snap) {
+        accounts = []; snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; accounts.push(d); });
+        mergeOfflineAccounts();
+        refreshAllViews();
+      }, function(err) { console.log('Accounts listener:', err); });
   }
   if (!snapshotListeners.whatsappQueue) {
-    snapshotListeners.whatsappQueue = db.collection('whatsappQueue').onSnapshot(function(snap) {
-      var firebaseQueue = [];
-      snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; firebaseQueue.push(d); });
-      var localOnly = [];
-      for (var i = 0; i < whatsappQueue.length; i++) {
-        var lq = whatsappQueue[i];
-        var exists = false;
-        for (var j = 0; j < firebaseQueue.length; j++) { if (firebaseQueue[j].id === lq.id) { exists = true; break; } }
-        if (!exists && lq.status === 'pending') localOnly.push(lq);
-      }
-      whatsappQueue = firebaseQueue.concat(localOnly);
-      saveQueueToLocalStorage();
-      updateQueueBadge(); renderWhatsappQueue(); updateDashboardQueueBanner();
-    }, function(err) { console.log('WhatsApp queue listener:', err); });
+    snapshotListeners.whatsappQueue = db.collection('whatsappQueue')
+      .where('businessId', '==', currentBusinessId)
+      .onSnapshot(function(snap) {
+        var firebaseQueue = [];
+        snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; firebaseQueue.push(d); });
+        var localOnly = [];
+        for (var i = 0; i < whatsappQueue.length; i++) {
+          var lq = whatsappQueue[i];
+          var exists = false;
+          for (var j = 0; j < firebaseQueue.length; j++) { if (firebaseQueue[j].id === lq.id) { exists = true; break; } }
+          if (!exists && lq.status === 'pending' && lq.businessId === currentBusinessId) localOnly.push(lq);
+        }
+        whatsappQueue = firebaseQueue.concat(localOnly);
+        saveQueueToLocalStorage();
+        updateQueueBadge(); renderWhatsappQueue(); updateDashboardQueueBanner();
+      }, function(err) { console.log('WhatsApp queue listener:', err); });
   }
   firstLoadDone = true;
 }
@@ -432,6 +465,7 @@ function mergeOfflineAccounts() {
   if (offlineAccountsQueue.length === 0) return;
   for (var i = 0; i < offlineAccountsQueue.length; i++) {
     var off = offlineAccountsQueue[i];
+    if (off.businessId && off.businessId !== currentBusinessId) continue;
     var exists = false;
     for (var j = 0; j < accounts.length; j++) {
       if (accounts[j].createdAt === off.createdAt && accounts[j].shopId == off.shopId && accounts[j].amount == off.amount) { exists = true; break; }
@@ -455,6 +489,7 @@ function mergeOfflineOrders() {
   var stillPending = [];
   for (var i = 0; i < offlineOrdersQueue.length; i++) {
     var off = offlineOrdersQueue[i];
+    if (off.businessId && off.businessId !== currentBusinessId) { stillPending.push(off); continue; }
     var foundOnFirebase = false;
     for (var j = 0; j < orders.length; j++) { if (orders[j].createdAt === off.createdAt && orders[j].shopId == off.shopId) { foundOnFirebase = true; break; } }
     if (!foundOnFirebase) { off._offlinePending = true; stillPending.push(off); }
@@ -462,6 +497,7 @@ function mergeOfflineOrders() {
   offlineOrdersQueue = stillPending;
   for (var i = 0; i < offlineOrdersQueue.length; i++) {
     var off = offlineOrdersQueue[i];
+    if (off.businessId && off.businessId !== currentBusinessId) continue;
     var exists = false;
     for (var j = 0; j < orders.length; j++) { if (orders[j].id === off.id) { exists = true; break; } }
     if (!exists) orders.push(off);
@@ -472,6 +508,7 @@ function mergeOfflineRoutes() {
   var stillPending = [];
   for (var i = 0; i < offlineRoutesQueue.length; i++) {
     var off = offlineRoutesQueue[i];
+    if (off.businessId && off.businessId !== currentBusinessId) { stillPending.push(off); continue; }
     var foundOnFirebase = false;
     for (var j = 0; j < routes.length; j++) { if (routes[j].createdAt === off.createdAt && routes[j].name === off.name) { foundOnFirebase = true; break; } }
     if (!foundOnFirebase) stillPending.push(off);
@@ -479,14 +516,22 @@ function mergeOfflineRoutes() {
   offlineRoutesQueue = stillPending;
   for (var i = 0; i < offlineRoutesQueue.length; i++) {
     var off = offlineRoutesQueue[i];
+    if (off.businessId && off.businessId !== currentBusinessId) continue;
     var exists = false;
     for (var j = 0; j < routes.length; j++) { if (routes[j].id === off.id) { exists = true; break; } }
     if (!exists) routes.push(off);
   }
 }
 function loadAllData(callback) { setupRealtimeListeners(); setTimeout(function() { if (callback) callback(); }, 800); }
+
+// =====================================================
+// Feature #4: saveToFirebase with auto businessId
+// =====================================================
 function saveToFirebase(collection, id, data) {
   if (!firebaseReady) return Promise.reject('Firebase not ready');
+  if (currentBusinessId && data && !data.businessId) {
+    data.businessId = currentBusinessId;
+  }
   pendingChangesCount++; updateSyncStatusIndicator(); updatePendingBanner(); updateSettingsSyncStatus();
   return db.collection(collection).doc(String(id)).set(data).then(function() {
     pendingChangesCount = Math.max(0, pendingChangesCount - 1);
@@ -509,18 +554,22 @@ function deleteFromFirebase(collection, id) {
   });
 }
 function saveSettingsFirebase() {
-  if (!firebaseReady) return;
-  saveToFirebase('settings', 'products', { list: products });
-  saveToFirebase('settings', 'business', { bizName: settings.bizName });
+  if (!firebaseReady || !currentBusinessId) return;
+  saveToFirebase('settings', 'products_' + currentBusinessId, { list: products, businessId: currentBusinessId });
+  saveToFirebase('settings', 'business_' + currentBusinessId, { bizName: settings.bizName, businessId: currentBusinessId });
 }
+
+// =====================================================
+// Feature #4: Reset only own business data
+// =====================================================
 function confirmResetAllData() {
   if (!isAdmin()) { showToast('Sirf Admin reset kar sakta hai', 'error'); return; }
   resetConfirmStage = 0;
   var textEl = document.getElementById('resetConfirmText');
   var bodyEl = document.getElementById('resetConfirmBody');
   var btnEl = document.getElementById('resetConfirmBtn');
-  if (textEl) textEl.textContent = 'Pakka reset karna hai? Saara data delete ho jayega.';
-  if (bodyEl) bodyEl.innerHTML = '<p style="color:#64748b;font-size:14px;margin:10px 0;">Ye delete hoga: <b>Shopkeepers, Products, Orders, Routes, Accounts, WhatsApp Queue</b><br>Ye safe rahega: <b>Users, PIN, Business Name</b></p>';
+  if (textEl) textEl.textContent = 'Pakka reset karna hai? Aap ke business ka saara data delete ho jayega.';
+  if (bodyEl) bodyEl.innerHTML = '<p style="color:#64748b;font-size:14px;margin:10px 0;">Ye delete hoga (sirf aap ke business ka): <b>Shopkeepers, Products, Orders, Routes, Accounts, WhatsApp Queue</b><br>Ye safe rahega: <b>Users, PIN, Business Name</b><br><br><b style="color:#16a34a;">Doosre businesses ka data safe rahega ✅</b></p>';
   if (btnEl) btnEl.innerHTML = '<i class="fa fa-arrow-right"></i> Haan, Aage Badhein';
   document.getElementById('resetConfirmModal').classList.add('active');
 }
@@ -530,7 +579,7 @@ function proceedResetConfirm() {
     var textEl = document.getElementById('resetConfirmText');
     var bodyEl = document.getElementById('resetConfirmBody');
     var btnEl = document.getElementById('resetConfirmBtn');
-    if (textEl) textEl.textContent = '⚠️ Aakhri baar pooch rahe hain — SAB KUCH delete ho jayega!';
+    if (textEl) textEl.textContent = '⚠️ Aakhri baar pooch rahe hain — AAP KE BUSINESS ka SAB KUCH delete ho jayega!';
     if (bodyEl) bodyEl.innerHTML = '<p style="color:#dc2626;font-size:14px;margin:10px 0;font-weight:600;">Ye action undo nahi ho sakta.</p>';
     if (btnEl) btnEl.innerHTML = '<i class="fa fa-rotate-left"></i> Haan, Confirm Reset';
     return;
@@ -544,27 +593,35 @@ function closeResetConfirmModal() {
 function doResetAllData() {
   closeResetConfirmModal();
   if (!firebaseReady) { showToast('Firebase load nahi hua', 'error'); return; }
+  if (!currentBusinessId) { showToast('Business ID nahi mili', 'error'); return; }
   showToast('⏳ Reset ho raha hai...', 'info', 5000);
-  db.collection('shopkeepers').get().then(function(snap) {
-    var batch = db.batch(); snap.forEach(function(doc) { batch.delete(doc.ref); }); return batch.commit();
-  }).then(function() { return db.collection('orders').get(); })
-  .then(function(snap) { var batch = db.batch(); snap.forEach(function(doc) { batch.delete(doc.ref); }); return batch.commit(); })
-  .then(function() { return db.collection('routes').get(); })
-  .then(function(snap) { var batch = db.batch(); snap.forEach(function(doc) { batch.delete(doc.ref); }); return batch.commit(); })
-  .then(function() { return db.collection('accounts').get(); })
-  .then(function(snap) { var batch = db.batch(); snap.forEach(function(doc) { batch.delete(doc.ref); }); return batch.commit(); })
-  .then(function() { return db.collection('whatsappQueue').get(); })
-  .then(function(snap) { var batch = db.batch(); snap.forEach(function(doc) { batch.delete(doc.ref); }); return batch.commit(); })
-  .then(function() { return db.collection('settings').doc('products').set({ list: [] }); })
-  .then(function() {
-    shopkeepers = []; orders = []; routes = []; products = []; accounts = []; whatsappQueue = [];
-    offlineOrdersQueue = []; offlineRoutesQueue = []; offlineAccountsQueue = [];
-    localStorage.removeItem('whatsappQueueLocal'); localStorage.removeItem('offlineAccountsQueue');
-    renderDashboard(); renderShopkeepers(); renderRoutes(); renderHistory(); renderSettings(); renderRouteShopPicker(); populateSalesFilters(); renderAccounts(); renderPendingAmounts(); renderWhatsappQueue();
-    if (isAdmin()) renderUsers();
-    showToast('✅ Saara data reset ho gaya!', 'success', 4000);
-  }).catch(function(e) { console.log('Reset error:', e); showToast('❌ Reset mein masla: ' + (e.message || 'Unknown'), 'error', 5000); });
+  var bizId = currentBusinessId;
+
+  function deleteCollectionByName(colName) {
+    return db.collection(colName).where('businessId', '==', bizId).get().then(function(snap) {
+      if (snap.empty) return;
+      var batch = db.batch();
+      snap.forEach(function(doc) { batch.delete(doc.ref); });
+      return batch.commit();
+    });
+  }
+
+  deleteCollectionByName('shopkeepers')
+    .then(function() { return deleteCollectionByName('orders'); })
+    .then(function() { return deleteCollectionByName('routes'); })
+    .then(function() { return deleteCollectionByName('accounts'); })
+    .then(function() { return deleteCollectionByName('whatsappQueue'); })
+    .then(function() { return db.collection('settings').doc('products_' + bizId).set({ list: [], businessId: bizId }); })
+    .then(function() {
+      shopkeepers = []; orders = []; routes = []; products = []; accounts = []; whatsappQueue = [];
+      offlineOrdersQueue = []; offlineRoutesQueue = []; offlineAccountsQueue = [];
+      localStorage.removeItem('whatsappQueueLocal'); localStorage.removeItem('offlineAccountsQueue');
+      renderDashboard(); renderShopkeepers(); renderRoutes(); renderHistory(); renderSettings(); renderRouteShopPicker(); populateSalesFilters(); renderAccounts(); renderPendingAmounts(); renderWhatsappQueue();
+      if (isAdmin()) renderUsers();
+      showToast('✅ Aap ke business ka saara data reset ho gaya!', 'success', 4000);
+    }).catch(function(e) { console.log('Reset error:', e); showToast('❌ Reset mein masla: ' + (e.message || 'Unknown'), 'error', 5000); });
 }
+
 function loadLayouts() {
   if (currentUser && currentUser.menuLayout && Array.isArray(currentUser.menuLayout) && currentUser.menuLayout.length > 0) {
     menuLayout = currentUser.menuLayout.slice();
@@ -759,6 +816,7 @@ function saveToWhatsappQueue(data) {
   data.createdAt = data.createdAt || new Date().toISOString();
   data.status = 'pending';
   data.createdBy = currentUser ? currentUser.user : 'unknown';
+  if (currentBusinessId) data.businessId = currentBusinessId;
   whatsappQueue.push(data);
   saveQueueToLocalStorage();
   updateQueueBadge();
@@ -778,7 +836,11 @@ function loadQueueFromLocalStorage() {
 }
 function getPendingQueueCount() {
   var count = 0;
-  for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].status === 'pending') count++; }
+  for (var i = 0; i < whatsappQueue.length; i++) { 
+    if (whatsappQueue[i].status === 'pending') {
+      if (!currentBusinessId || !whatsappQueue[i].businessId || whatsappQueue[i].businessId === currentBusinessId) count++;
+    }
+  }
   return count;
 }
 function updateQueueBadge() {
@@ -857,7 +919,11 @@ function renderWhatsappQueue() {
   if (!list) return;
   var badge = document.getElementById('queueCountBadge');
   var active = [];
-  for (var i = 0; i < whatsappQueue.length; i++) { if (whatsappQueue[i].status === 'pending') active.push(whatsappQueue[i]); }
+  for (var i = 0; i < whatsappQueue.length; i++) { 
+    if (whatsappQueue[i].status === 'pending') {
+      if (!currentBusinessId || !whatsappQueue[i].businessId || whatsappQueue[i].businessId === currentBusinessId) active.push(whatsappQueue[i]);
+    }
+  }
   if (badge) badge.textContent = active.length;
   if (active.length === 0) { list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Koi pending message nahi</div>'; return; }
   active.sort(function(a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
@@ -1030,6 +1096,7 @@ function saveWasooli(btn) {
     shopId: currentAccountShopId, type: 'payment', amount: amount, note: note,
     date: todayStr(), createdAt: new Date().toISOString(),
     createdBy: currentUser ? currentUser.user : 'unknown',
+    businessId: currentBusinessId,
     id: 'local_acc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
     _offlinePending: !isOnline
   };
@@ -1141,7 +1208,7 @@ function confirmDeleteWasooli(btn) {
 }
 
 // =====================================================
-// Feature #3: addToAccount() — ab maund, kg bhi accept karega
+// Feature #3: addToAccount with maund, kg + businessId
 // =====================================================
 function addToAccount(shopId, amount, type, orderId, productName, note, maund, kg) {
   var entry = {
@@ -1151,6 +1218,7 @@ function addToAccount(shopId, amount, type, orderId, productName, note, maund, k
     kg: parseInt(kg) || 0,
     date: todayStr(), createdAt: new Date().toISOString(),
     createdBy: currentUser ? currentUser.user : 'unknown',
+    businessId: currentBusinessId,
     id: 'local_acc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
     _offlinePending: !isOnline
   };
@@ -1176,7 +1244,6 @@ function addOrderAmountToAccountIfNeeded(order) {
   for (var i = 0; i < order.items.length; i++) {
     var itm = order.items[i];
     if (itm.amount && itm.amount > 0) {
-      // Feature #3: maund aur kg bhi pass karo
       addToAccount(order.shopId, itm.amount, 'order', order.id, itm.product, '', itm.maund, itm.kg);
     }
   }
@@ -1209,7 +1276,7 @@ function addOrderAmountToAccountIfNeeded(order) {
 }
 
 // =====================================================
-// Feature #1: NAYA — Order Detail Modal
+// Feature #1: Order Detail Modal
 // =====================================================
 function openOrderDetailModal(shopId, options) {
   options = options || {};
@@ -1228,7 +1295,6 @@ function openOrderDetailModal(shopId, options) {
     }
     sOrders.push(o);
   }
-  // Sort by createdAt (purana pehle)
   sOrders.sort(function(a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
   currentOrderDetailShopId = shopId;
   currentOrderDetailReadOnly = readOnly;
@@ -1244,12 +1310,10 @@ function openOrderDetailModal(shopId, options) {
   var farziTag = (shop.category === 'farzi') ? ' <span class="farzi-badge">FARZI</span>' : '';
   var grandTotal = 0;
   var html = '';
-  // Shop info header
   html += '<div class="order-detail-shop-info">' +
     '<h3><i class="fa fa-store"></i> ' + shop.name + farziTag + '</h3>' +
     '<p><i class="fa fa-phone"></i> ' + shop.mobile + (shop.address ? ' • <i class="fa fa-map-marker-alt"></i> ' + shop.address : '') + '</p>' +
     '</div>';
-  // Har order ka card
   for (var i = 0; i < sOrders.length; i++) {
     var o = sOrders[i];
     var orderTotal = 0;
@@ -1287,7 +1351,6 @@ function openOrderDetailModal(shopId, options) {
     }
     html += '</div>';
   }
-  // Grand total box
   html += '<div class="grand-total-box">' +
     '<div class="gt-row">' +
       '<span class="gt-label">💰 Grand Total:</span>' +
@@ -1315,7 +1378,6 @@ function deliverSingleOrderFromModal(orderId, btn) {
   if (btn) disableButton(btn, 'Delivering...');
   var shop = getShopById(order.shopId);
   var isFarzi = shop && shop.category === 'farzi';
-  // Poora order deliver
   for (var i = 0; i < order.items.length; i++) {
     var it = order.items[i];
     it.deliveredMaund = parseInt(it.maund) || 0;
@@ -1330,13 +1392,11 @@ function deliverSingleOrderFromModal(orderId, btn) {
     renderOrdersPage(); renderDashboard(); renderDelivery();
     var pm = document.getElementById('pendingShopModal'); if (pm && pm.classList.contains('active')) refreshPendingShopModal();
     showToast('✅ Order deliver ho gaya!', 'success');
-    // Farzi check
     if (isFarzi && order.status === 'Delivered') {
       closeOrderDetailModal();
       setTimeout(function() { openFarziDeliverModal(order.id); }, 400);
       return;
     }
-    // Refresh modal
     if (currentOrderDetailShopId) {
       setTimeout(function() {
         var stillPending = false;
@@ -1348,7 +1408,6 @@ function deliverSingleOrderFromModal(orderId, btn) {
         else openOrderDetailModal(currentOrderDetailShopId, { readOnly: false });
       }, 500);
     }
-    // WhatsApp
     if (shop && shop.mobile && !isFarzi) {
       setTimeout(function() { openWhatsappDeliveredShareModal(order, shop); }, 600);
     }
@@ -1393,7 +1452,7 @@ function deliverAllOrdersFromModal(shopId, btn) {
 }
 
 // =====================================================
-// Feature #2: NAYA — Payment Split Modal (Farzi)
+// Feature #2: Payment Split Modal (Farzi)
 // =====================================================
 function openPaymentSplitModal(order) {
   if (!order) return;
@@ -1416,7 +1475,6 @@ function openPaymentSplitModal(order) {
       kg: parseInt(it.kg) || 0
     });
   }
-  // Order-level totals
   var orderPaid = parseInt(order.paidAmount) || 0;
   var orderPending = parseInt(order.pendingAmount);
   if (isNaN(orderPending)) orderPending = totalOrderAmount - orderPaid;
@@ -1477,7 +1535,6 @@ function onSplitPaidInput(idx, val) {
   if (paid > it.amount) paid = it.amount;
   it.paid = paid;
   it.pending = it.amount - paid;
-  // Update pending input
   var pendingInput = document.querySelector('.split-item-row .pending[data-idx="' + idx + '"]');
   if (pendingInput) pendingInput.value = it.pending;
   recalculateSplitTotal();
@@ -1519,7 +1576,6 @@ function syncSplitFromPaidInput() {
   var totalOrder = 0;
   for (var i = 0; i < currentSplitItems.length; i++) totalOrder += currentSplitItems[i].amount;
   if (totalPaid > totalOrder) { totalPaid = totalOrder; paidInput.value = totalPaid; }
-  // Distribute upar se neeche
   var remaining = totalPaid;
   for (var i = 0; i < currentSplitItems.length; i++) {
     var it = currentSplitItems[i];
@@ -1543,7 +1599,6 @@ function savePaymentSplit(btn) {
     totalPaid += currentSplitItems[i].paid;
   }
   var totalPending = totalOrder - totalPaid;
-  // Order items update
   for (var i = 0; i < order.items.length; i++) {
     var it = order.items[i];
     for (var j = 0; j < currentSplitItems.length; j++) {
@@ -1564,9 +1619,6 @@ function savePaymentSplit(btn) {
   } else {
     order.amountStatus = 'pending';
   }
-  // Account entry — jo naya paid hua
-  var prevPaid = parseInt(order._prevPaidForAccount) || 0;
-  // Simple: poora paid amount account mein add karo (agar pehli baar hai)
   if (firebaseReady) {
     db.collection('orders').doc(String(order.id)).update({
       items: order.items,
@@ -1656,7 +1708,8 @@ function saveMultiOrderActual() {
     date: date, notes: notes, status: 'Pending',
     createdBy: currentUser ? currentUser.user : 'unknown',
     createdAt: new Date().toISOString(), amountAddedToAccount: false,
-    paidAmount: 0, pendingAmount: totalAmount
+    paidAmount: 0, pendingAmount: totalAmount,
+    businessId: currentBusinessId
   };
   var shop = getShopById(shopId);
   var wasOffline = !isOnline;
@@ -1669,7 +1722,8 @@ function saveMultiOrderActual() {
     totalAmount: newOrder.totalAmount, date: newOrder.date, notes: newOrder.notes,
     status: newOrder.status, createdBy: newOrder.createdBy, createdAt: newOrder.createdAt,
     amountStatus: newOrder.amountStatus || null, amountAddedToAccount: false,
-    paidAmount: 0, pendingAmount: newOrder.totalAmount
+    paidAmount: 0, pendingAmount: newOrder.totalAmount,
+    businessId: currentBusinessId
   }).then(function(ref) {
     newOrder.id = ref.id; newOrder._offlinePending = false;
   }).catch(function(e) {
@@ -1852,13 +1906,11 @@ function markFarziDelivered(status, btn) {
   for (var i = 0; i < orders.length; i++) { if (orders[i].id == orderId) { order = orders[i]; break; } }
   if (!order) { closeFarziDeliverModal(); return; }
   if (status === 'pending') {
-    // Split Modal kholo
     closeFarziDeliverModal();
     if (btn) enableButton(btn);
     setTimeout(function() { openPaymentSplitModal(order); }, 300);
     return;
   }
-  // status === 'paid' — poora paid
   if (btn) disableButton(btn, 'Saving...');
   order.amountStatus = 'paid';
   order.paidAt = new Date().toISOString();
@@ -2196,12 +2248,19 @@ function can(permission) {
   if (!currentUser.perms) return false;
   return currentUser.perms[permission] === true;
 }
+
+// =====================================================
+// Feature #4: doSignup with Business Name + Business ID
+// =====================================================
 function doSignup() {
+  var bizNameEl = document.getElementById('signupBizName');
+  var businessName = bizNameEl ? bizNameEl.value.trim() : '';
   var user = document.getElementById('signupUser').value.trim();
   var pass = document.getElementById('signupPass').value;
   var pass2 = document.getElementById('signupPass2').value;
   var err = document.getElementById('loginError');
   err.textContent = '';
+  if (!businessName) { err.textContent = 'Business ka naam daalein'; return; }
   if (!user || !pass) { err.textContent = 'Username aur password daalein'; return; }
   if (pass.length < 4) { err.textContent = 'Password kam az kam 4 characters'; return; }
   if (pass !== pass2) { err.textContent = 'Password match nahi'; return; }
@@ -2209,23 +2268,37 @@ function doSignup() {
   if (!isOnline) { err.textContent = 'Internet zaroori hai'; return; }
   err.textContent = 'Account bana rahe hain...';
   db.collection('users').where('user', '==', user).get().then(function(snap) {
-    if (!snap.empty) { err.textContent = 'Ye username pehle se mojood hai'; return; }
+    if (!snap.empty) { err.textContent = 'Ye username pehle se mojood hai — koi aur username try karein'; return; }
+    var newBusinessId = generateBusinessId();
     var adminUser = {
       user: user, pass: pass, display: user, isAdmin: true, pin: '',
+      businessId: newBusinessId,
+      businessName: businessName,
       perms: { newOrder: true, deliver: true, shopkeepers: true, history: true, settings: true, routes: true, accounts: true },
       menuLayout: JSON.parse(JSON.stringify(DEFAULT_MENU)),
       dashboardLayout: JSON.parse(JSON.stringify(DEFAULT_DASHBOARD)),
       createdAt: new Date().toISOString()
     };
     db.collection('users').add(adminUser).then(function(ref) {
+      // Business ka settings doc bhi banao
+      db.collection('settings').doc('business_' + newBusinessId).set({
+        bizName: businessName, businessId: newBusinessId
+      }).catch(function(e) { console.log('Business settings error:', e); });
+      db.collection('settings').doc('products_' + newBusinessId).set({
+        list: ['Aata', 'Besan', 'Chawal ka Atta'], businessId: newBusinessId
+      }).catch(function(e) { console.log('Products settings error:', e); });
       err.textContent = '';
-      showToast('✅ Admin account ban gaya!', 'success', 4000);
+      showToast('✅ Admin account ban gaya! Ab login karein.', 'success', 4000);
       hideSignup();
       document.getElementById('loginUser').value = user;
       document.getElementById('loginPass').value = '';
     }).catch(function(e) { err.textContent = 'Error: ' + e.message; });
   }).catch(function(e) { err.textContent = 'Error: ' + e.message; });
 }
+
+// =====================================================
+// Feature #4: doLogin with businessId set
+// =====================================================
 function doLogin() {
   var user = document.getElementById('loginUser').value.trim();
   var pass = document.getElementById('loginPass').value;
@@ -2241,6 +2314,8 @@ function doLogin() {
     if (!found) { err.textContent = 'Ghalat username ya password'; return; }
     err.textContent = '';
     currentUser = found; isLoggedIn = true;
+    currentBusinessId = found.businessId || null;
+    currentBusinessName = found.businessName || null;
     localStorage.setItem('isLoggedIn', 'true'); localStorage.setItem('currentUser', JSON.stringify(found));
     if (currentUser.pin && String(currentUser.pin).length === 4) { showPinScreenOnly(); }
     else { showAppScreenOnly(); showApp(); setTimeout(function() { promptPinSetup(); }, 500); }
@@ -2248,6 +2323,8 @@ function doLogin() {
     var cachedUser = JSON.parse(localStorage.getItem('currentUser'));
     if (cachedUser && cachedUser.user === user && cachedUser.pass === pass) {
       currentUser = cachedUser; isLoggedIn = true;
+      currentBusinessId = cachedUser.businessId || null;
+      currentBusinessName = cachedUser.businessName || null;
       localStorage.setItem('isLoggedIn', 'true');
       if (currentUser.pin && String(currentUser.pin).length === 4) showPinScreenOnly();
       else { showAppScreenOnly(); showApp(); }
@@ -2257,12 +2334,22 @@ function doLogin() {
   });
 }
 function showSignup() { document.getElementById('signupSection').style.display = 'block'; document.getElementById('signupLinkBox').style.display = 'none'; document.getElementById('loginError').textContent = ''; }
-function hideSignup() { document.getElementById('signupSection').style.display = 'none'; document.getElementById('signupLinkBox').style.display = 'block'; document.getElementById('signupUser').value = ''; document.getElementById('signupPass').value = ''; document.getElementById('signupPass2').value = ''; }
+function hideSignup() { 
+  document.getElementById('signupSection').style.display = 'none'; 
+  document.getElementById('signupLinkBox').style.display = 'block'; 
+  document.getElementById('signupBizName').value = '';
+  document.getElementById('signupUser').value = ''; 
+  document.getElementById('signupPass').value = ''; 
+  document.getElementById('signupPass2').value = ''; 
+}
 function doLogout() {
   if (!confirm('Logout karna hai?')) return;
   for (var key in snapshotListeners) { if (snapshotListeners[key]) { try { snapshotListeners[key](); } catch (e) {} } }
   snapshotListeners = {}; offlineOrdersQueue = []; offlineRoutesQueue = [];
   isLoggedIn = false; currentUser = null;
+  currentBusinessId = null; currentBusinessName = null;
+  // Clear all data arrays
+  shopkeepers = []; orders = []; routes = []; accounts = []; whatsappQueue = []; users = [];
   localStorage.setItem('isLoggedIn', 'false'); localStorage.removeItem('currentUser');
   showLoginScreenOnly();
   document.getElementById('pinSetupBanner').style.display = 'none';
@@ -2430,6 +2517,10 @@ function saveBizName() {
   var name = el.value.trim();
   if (!name) { showToast('Naam likhein', 'warning'); return; }
   settings.bizName = name;
+  if (currentUser) {
+    currentUser.businessName = name;
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  }
   saveSettingsFirebase(); applySettings(); showToast('✅ Naam save ho gaya!', 'success');
 }
 function renderSettings() {
@@ -2469,42 +2560,51 @@ function saveUser(btn) {
   var display = document.getElementById('newUserDisplay').value.trim();
   if (!user || !pass) { showToast('Username aur password zaroori!', 'warning'); return; }
   if (pass.length < 4) { showToast('Password kam az kam 4 characters', 'warning'); return; }
-  for (var i = 0; i < users.length; i++) { if (users[i].user === user && users[i].id != id) { showToast('Ye username pehle se mojood hai', 'error'); return; } }
-  if (btn) disableButton(btn, 'Saving...');
-  var perms = {
-    newOrder: document.getElementById('permNewOrder').checked,
-    deliver: document.getElementById('permDeliver').checked,
-    shopkeepers: document.getElementById('permShopkeepers').checked,
-    history: document.getElementById('permHistory').checked,
-    settings: document.getElementById('permSettings').checked,
-    routes: document.getElementById('permRoutes').checked,
-    accounts: document.getElementById('permAccounts').checked
-  };
-  if (id) {
-    for (var i = 0; i < users.length; i++) {
-      if (users[i].id == id) {
-        users[i].user = user; users[i].pass = pass;
-        users[i].display = display || user; users[i].perms = perms;
-        saveToFirebase('users', users[i].id, users[i]);
-      }
+  // Globally unique check
+  db.collection('users').where('user', '==', user).get().then(function(snap) {
+    var conflict = false;
+    snap.forEach(function(doc) {
+      var d = doc.data();
+      if (d.id !== id && doc.id !== id) conflict = true;
+    });
+    if (conflict) { showToast('Ye username pehle se mojood hai', 'error'); return; }
+    if (btn) disableButton(btn, 'Saving...');
+    var perms = {
+      newOrder: document.getElementById('permNewOrder').checked,
+      deliver: document.getElementById('permDeliver').checked,
+      shopkeepers: document.getElementById('permShopkeepers').checked,
+      history: document.getElementById('permHistory').checked,
+      settings: document.getElementById('permSettings').checked,
+      routes: document.getElementById('permRoutes').checked,
+      accounts: document.getElementById('permAccounts').checked
+    };
+    if (id) {
+      // Edit existing
+      var updateData = {
+        user: user, pass: pass, display: display || user, perms: perms
+      };
+      db.collection('users').doc(String(id)).update(updateData).then(function() {
+        if (btn) enableButton(btn); showToast('✅ User save ho gaya!', 'success'); resetUserForm(); renderUsers();
+      }).catch(function(e) { if (btn) enableButton(btn); showToast('❌ ' + e.message, 'error', 4000); });
+      return;
     }
-    setTimeout(function() { if (btn) enableButton(btn); showToast('✅ User save ho gaya!', 'success'); resetUserForm(); renderUsers(); }, 300);
-    return;
-  }
-  var newUser = {
-    user: user, pass: pass, display: display || user, isAdmin: false, perms: perms, pin: '',
-    menuLayout: JSON.parse(JSON.stringify(DEFAULT_MENU)),
-    dashboardLayout: JSON.parse(JSON.stringify(DEFAULT_DASHBOARD)),
-    createdAt: new Date().toISOString()
-  };
-  if (firebaseReady) {
-    db.collection('users').add(newUser).then(function(ref) {
-      newUser.id = ref.id;
-      if (btn) enableButton(btn);
-      showToast('✅ User save ho gaya!', 'success');
-      resetUserForm(); renderUsers();
-    }).catch(function(e) { if (btn) enableButton(btn); showToast('❌ ' + e.message, 'error', 4000); });
-  } else { if (btn) enableButton(btn); showToast('Firebase load nahi hua', 'error'); }
+    var newUser = {
+      user: user, pass: pass, display: display || user, isAdmin: false, perms: perms, pin: '',
+      businessId: currentBusinessId,
+      businessName: currentBusinessName,
+      menuLayout: JSON.parse(JSON.stringify(DEFAULT_MENU)),
+      dashboardLayout: JSON.parse(JSON.stringify(DEFAULT_DASHBOARD)),
+      createdAt: new Date().toISOString()
+    };
+    if (firebaseReady) {
+      db.collection('users').add(newUser).then(function(ref) {
+        newUser.id = ref.id;
+        if (btn) enableButton(btn);
+        showToast('✅ User save ho gaya!', 'success');
+        resetUserForm(); renderUsers();
+      }).catch(function(e) { if (btn) enableButton(btn); showToast('❌ ' + e.message, 'error', 4000); });
+    } else { if (btn) enableButton(btn); showToast('Firebase load nahi hua', 'error'); }
+  }).catch(function(e) { showToast('❌ ' + e.message, 'error'); });
 }
 function resetUserForm() {
   document.getElementById('userId').value = '';
@@ -2820,7 +2920,7 @@ function saveShopkeeper(btn) {
     }, 300);
     return;
   }
-  var newShop = { name: name, mobile: mobile, address: address, category: category, createdAt: new Date().toISOString() };
+  var newShop = { name: name, mobile: mobile, address: address, category: category, createdAt: new Date().toISOString(), businessId: currentBusinessId };
   if (firebaseReady) {
     db.collection('shopkeepers').add(newShop).then(function(ref) {
       newShop.id = ref.id;
@@ -3077,10 +3177,10 @@ function saveRoute(btn) {
     }, 300);
     return;
   }
-  var newRoute = { name: name, items: items, createdBy: currentUser ? currentUser.user : 'unknown', createdAt: new Date().toISOString() };
+  var newRoute = { name: name, items: items, createdBy: currentUser ? currentUser.user : 'unknown', createdAt: new Date().toISOString(), businessId: currentBusinessId };
   newRoute.id = 'local_route_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   if (firebaseReady) {
-    db.collection('routes').add({ name: newRoute.name, items: newRoute.items, createdBy: newRoute.createdBy, createdAt: newRoute.createdAt }).then(function(ref) { newRoute.id = ref.id; }).catch(function(e) { console.log('Route add error:', e); });
+    db.collection('routes').add({ name: newRoute.name, items: newRoute.items, createdBy: newRoute.createdBy, createdAt: newRoute.createdAt, businessId: currentBusinessId }).then(function(ref) { newRoute.id = ref.id; }).catch(function(e) { console.log('Route add error:', e); });
     offlineRoutesQueue.push(newRoute);
     setTimeout(function() {
       mergeOfflineRoutes();
@@ -4126,7 +4226,6 @@ function renderSalesReport() {
   document.getElementById('salesTotalOrders').textContent = totalOrders;
   document.getElementById('salesTotalLoad').textContent = totalKgText(totalKg);
   document.getElementById('salesTotalProducts').textContent = totalProducts;
-  // Total amount cards ke baad show karo (existing HTML mein total amount ke liye card nahi, isliye hum total load card mein hi dikhayenge — ya totalProducts card modify karo)
   var prodList = document.getElementById('salesProductWiseList');
   var prodKeys = Object.keys(productMap);
   prodKeys.sort(function(a, b) { return productMap[b].kg - productMap[a].kg; });
@@ -4297,6 +4396,116 @@ function viewShopHistory(shopId) {
   document.getElementById('modal').classList.add('active');
 }
 function closeModal() { document.getElementById('modal').classList.remove('active'); }
+
+// =====================================================
+// Feature #4: Legacy Migration on startup
+// =====================================================
+function migrateLegacyData(user, callback) {
+  // Agar user ke paas businessId nahi hai, to legacy assign karo
+  if (user.businessId) {
+    if (callback) callback();
+    return;
+  }
+  var legacyId = LEGACY_BUSINESS_ID;
+  var legacyName = user.display || user.user || 'Legacy Business';
+  // 1. User update
+  db.collection('users').doc(String(user.id)).update({
+    businessId: legacyId,
+    businessName: legacyName
+  }).then(function() {
+    user.businessId = legacyId;
+    user.businessName = legacyName;
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    // 2. Business settings doc
+    db.collection('settings').doc('business_' + legacyId).set({
+      bizName: legacyName, businessId: legacyId
+    }).catch(function(e) { console.log('Legacy business settings:', e); });
+    // 3. Products settings — agar products collection mein hai to migrate
+    db.collection('settings').doc('products').get().then(function(doc) {
+      if (doc.exists) {
+        var prodList = doc.data().list || [];
+        if (prodList.length > 0) {
+          db.collection('settings').doc('products_' + legacyId).set({
+            list: prodList, businessId: legacyId
+          }).catch(function(e) { console.log('Legacy products settings:', e); });
+        }
+      }
+    }).catch(function(e) { console.log(e); });
+    // 4. Shopkeepers migrate
+    db.collection('shopkeepers').get().then(function(snap) {
+      if (snap.empty) return;
+      var batch = db.batch(); var count = 0;
+      snap.forEach(function(doc) {
+        var d = doc.data();
+        if (!d.businessId) { batch.update(doc.ref, { businessId: legacyId }); count++; }
+      });
+      if (count > 0) return batch.commit();
+    }).then(function() {
+      // 5. Orders migrate
+      return db.collection('orders').get();
+    }).then(function(snap) {
+      if (!snap || snap.empty) return;
+      var batch = db.batch(); var count = 0;
+      snap.forEach(function(doc) {
+        var d = doc.data();
+        if (!d.businessId) { batch.update(doc.ref, { businessId: legacyId }); count++; }
+      });
+      if (count > 0) return batch.commit();
+    }).then(function() {
+      // 6. Routes migrate
+      return db.collection('routes').get();
+    }).then(function(snap) {
+      if (!snap || snap.empty) return;
+      var batch = db.batch(); var count = 0;
+      snap.forEach(function(doc) {
+        var d = doc.data();
+        if (!d.businessId) { batch.update(doc.ref, { businessId: legacyId }); count++; }
+      });
+      if (count > 0) return batch.commit();
+    }).then(function() {
+      // 7. Accounts migrate
+      return db.collection('accounts').get();
+    }).then(function(snap) {
+      if (!snap || snap.empty) return;
+      var batch = db.batch(); var count = 0;
+      snap.forEach(function(doc) {
+        var d = doc.data();
+        if (!d.businessId) { batch.update(doc.ref, { businessId: legacyId }); count++; }
+      });
+      if (count > 0) return batch.commit();
+    }).then(function() {
+      // 8. WhatsApp Queue migrate
+      return db.collection('whatsappQueue').get();
+    }).then(function(snap) {
+      if (!snap || snap.empty) return;
+      var batch = db.batch(); var count = 0;
+      snap.forEach(function(doc) {
+        var d = doc.data();
+        if (!d.businessId) { batch.update(doc.ref, { businessId: legacyId }); count++; }
+      });
+      if (count > 0) return batch.commit();
+    }).then(function() {
+      // 9. Other users (staff) migrate — same username pattern
+      return db.collection('users').get();
+    }).then(function(snap) {
+      if (!snap || snap.empty) return;
+      var batch = db.batch(); var count = 0;
+      snap.forEach(function(doc) {
+        var d = doc.data();
+        if (!d.businessId && doc.id !== String(user.id)) {
+          // Purane staff users bhi legacy ke andar hain
+          // Check karo ke ye staff admin ka hai ya nahi (koi direct link nahi, isliye sabko legacy assign karo)
+          batch.update(doc.ref, { businessId: legacyId }); count++;
+        }
+      });
+      if (count > 0) return batch.commit();
+    }).then(function() {
+      console.log('✅ Legacy migration complete');
+      if (callback) callback();
+    }).catch(function(e) { console.log('Legacy migration error:', e); if (callback) callback(); });
+  }).catch(function(e) { console.log('User migration error:', e); if (callback) callback(); });
+}
+
 window.addEventListener('load', function() {
   applySettings(); updateOnlineStatus(); showSplashScreen();
   loadQueueFromLocalStorage();
@@ -4305,6 +4514,8 @@ window.addEventListener('load', function() {
   var cachedUser = JSON.parse(localStorage.getItem('currentUser'));
   if (loggedIn && cachedUser) {
     currentUser = cachedUser; isLoggedIn = true;
+    currentBusinessId = cachedUser.businessId || null;
+    currentBusinessName = cachedUser.businessName || null;
     initFirebase(function() {
       setTimeout(function() {
         decideStartupScreen();
@@ -4320,8 +4531,26 @@ function decideStartupScreen() {
   var cachedUser = JSON.parse(localStorage.getItem('currentUser'));
   if (loggedIn && cachedUser) {
     currentUser = cachedUser; isLoggedIn = true;
-    if (currentUser.pin && String(currentUser.pin).length === 4) showPinScreenOnly();
-    else { showAppScreenOnly(); showApp(); }
+    currentBusinessId = cachedUser.businessId || null;
+    currentBusinessName = cachedUser.businessName || null;
+    if (currentUser.pin && String(currentUser.pin).length === 4) {
+      showPinScreenOnly();
+    } else {
+      showAppScreenOnly(); showApp();
+    }
+    // Legacy migration — agar businessId nahi hai to migrate karo
+    if (!currentBusinessId && firebaseReady) {
+      migrateLegacyData(currentUser, function() {
+        currentBusinessId = currentUser.businessId;
+        currentBusinessName = currentUser.businessName;
+        if (currentBusinessId) {
+          console.log('✅ After migration, businessId:', currentBusinessId);
+          // Reload listeners with new businessId
+          setupRealtimeListeners();
+          showToast('✅ Aap ka purana data migrate ho gaya', 'success', 4000);
+        }
+      });
+    }
     return;
   }
   showLoginScreenOnly();
