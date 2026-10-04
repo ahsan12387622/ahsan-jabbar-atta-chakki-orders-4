@@ -585,7 +585,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 #whatsappQueueReminderModal .modal-content { border-top: 5px solid #25D366; }
 #whatsappQueueReminderModal h2 { color: #15803d; }
 
-/* ============ NAYA: ORDER DETAIL MODAL (Feature #1) ============ */
+/* ============ ORDER DETAIL MODAL ============ */
 #orderDetailModal .modal-content { border-top: 5px solid #16a34a; }
 #orderDetailModal h2 { color: #15803d; }
 
@@ -774,7 +774,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   transform: translateY(-1px);
 }
 
-/* ============ NAYA: PAYMENT SPLIT MODAL (Feature #2) ============ */
+/* ============ PAYMENT SPLIT MODAL ============ */
 #paymentSplitModal .modal-content { border-top: 5px solid #f59e0b; }
 #paymentSplitModal h2 { color: #d97706; }
 
