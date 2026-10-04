@@ -70,9 +70,13 @@
     </div>
     <div id="signupSection" style="display:none; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 18px;">
       <h3 style="margin-bottom:14px; color:#16a34a;">Admin Account Banayein</h3>
-      <div class="form-group"><label>Username</label><input type="text" id="signupUser" autocomplete="off" /></div>
-      <div class="form-group"><label>Password</label><input type="password" id="signupPass" /></div>
-      <div class="form-group"><label>Confirm Password</label><input type="password" id="signupPass2" /></div>
+      <div class="form-group">
+        <label><i class="fa fa-store"></i> Business Name *</label>
+        <input type="text" id="signupBizName" placeholder="Jaise: Atta Chakki Ali" autocomplete="off" />
+      </div>
+      <div class="form-group"><label><i class="fa fa-user"></i> Username *</label><input type="text" id="signupUser" autocomplete="off" /></div>
+      <div class="form-group"><label><i class="fa fa-lock"></i> Password *</label><input type="password" id="signupPass" /></div>
+      <div class="form-group"><label><i class="fa fa-lock"></i> Confirm Password *</label><input type="password" id="signupPass2" /></div>
       <button class="btn primary big" onclick="doSignup()"><i class="fa fa-user-plus"></i> Admin Account Banayein</button>
       <button class="btn big" onclick="hideSignup()">Cancel</button>
     </div>
@@ -679,6 +683,7 @@
     </div>
     <div class="box" id="resetDataBox" style="display:none;">
       <h3><i class="fa fa-rotate-left"></i> Reset Data</h3>
+      <p class="hint" style="color:#dc2626;font-weight:600;">⚠️ Sirf apne business ka data delete hoga</p>
       <button class="btn primary" onclick="confirmResetAllData()" style="width:100%; margin-top:6px;">
         <i class="fa fa-rotate-left"></i> 🔄 Reset All Data
       </button>
@@ -931,9 +936,6 @@
   </div>
 </div>
 
-<!-- ============================================== -->
-<!-- NAYA: Order Detail Modal (Feature #1) -->
-<!-- ============================================== -->
 <div id="orderDetailModal" class="modal">
   <div class="modal-content">
     <span class="close" onclick="closeOrderDetailModal()">&times;</span>
@@ -942,9 +944,6 @@
   </div>
 </div>
 
-<!-- ============================================== -->
-<!-- NAYA: Payment Split Modal (Feature #2) -->
-<!-- ============================================== -->
 <div id="paymentSplitModal" class="modal">
   <div class="modal-content">
     <span class="close" onclick="closePaymentSplitModal()">&times;</span>
