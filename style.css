@@ -257,6 +257,109 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .edit-dash-btn { background: #6366f1; color: #fff; border: none; font-weight: 600; padding: 10px 16px; font-size: 13px; border-radius: 10px; cursor: pointer; margin: 0; }
 .edit-dash-btn:hover { background: #4f46e5; }
 
+.edit-date-btn { background: #f59e0b; color: #fff; border: none; font-weight: 600; padding: 10px 16px; font-size: 13px; border-radius: 10px; cursor: pointer; margin: 0; }
+.edit-date-btn:hover { background: #d97706; }
+
+.dash-header-btns { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+/* ============ DASHBOARD RANGE DISPLAY (Feature #7) ============ */
+.dashboard-range-display {
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  border: 1px solid #86efac;
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 15px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #166534;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dashboard-range-display i {
+  color: #16a34a;
+  font-size: 14px;
+}
+.dashboard-range-display span {
+  font-weight: 700;
+  color: #15803d;
+}
+
+/* ============ DATE RANGE FILTER (Feature #5) ============ */
+.date-range-filter {
+  background: #fff;
+  border: 2px solid #16a34a;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  box-shadow: 0 2px 8px rgba(22,163,74,0.08);
+}
+.date-range-filter .drf-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.date-range-filter .drf-field { display: flex; flex-direction: column; gap: 4px; }
+.date-range-filter .drf-field label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #166534;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.date-range-filter .drf-field input,
+.date-range-filter .drf-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #f0fdf4;
+  color: #166534;
+  cursor: pointer;
+}
+.date-range-filter .drf-field input:focus,
+.date-range-filter .drf-field select:focus {
+  outline: none;
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22,163,74,0.15);
+  background: #fff;
+}
+.date-range-filter .drf-quick {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.date-range-filter .drf-quick-btn {
+  flex: 1;
+  min-width: 70px;
+  padding: 8px 10px;
+  border: 1px solid #86efac;
+  background: #f0fdf4;
+  color: #166534;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.date-range-filter .drf-quick-btn:hover {
+  background: #dcfce7;
+  border-color: #16a34a;
+}
+.date-range-filter .drf-quick-btn.active {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: #fff;
+  border-color: #15803d;
+  box-shadow: 0 2px 6px rgba(22,163,74,0.3);
+}
+
 /* ============ DASHBOARD EDIT ============ */
 .dash-edit-panel { background: linear-gradient(135deg, #eef2ff, #e0e7ff); border: 2px solid #6366f1; border-radius: 14px; padding: 16px; margin-bottom: 18px; }
 .dash-edit-panel h4 { color: #3730a3; font-size: 15px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
@@ -1022,6 +1125,16 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   border-radius: 6px;
   display: inline-block;
 }
+.pending-shop-name .psn-dates {
+  font-size: 10px;
+  font-weight: 700;
+  color: #b45309;
+  background: rgba(255, 255, 255, 0.5);
+  padding: 2px 8px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-top: 2px;
+}
 .pending-shop-name.farzi-card {
   background: linear-gradient(135deg, #dbeafe, #bfdbfe) !important;
   border-color: #93c5fd !important;
@@ -1031,6 +1144,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .pending-shop-name.farzi-card .order-count { background: #2563eb !important; }
 .pending-shop-name.farzi-card .psn-summary { color: #1e40af !important; }
 .pending-shop-name.farzi-card .psn-amount { color: #1e40af !important; background: rgba(255,255,255,0.7); }
+.pending-shop-name.farzi-card .psn-dates { color: #1e40af !important; }
 .pending-shop-name.farzi-card i.shop-icon { color: #2563eb !important; }
 
 /* ============ SHOP PICKER ============ */
@@ -1148,6 +1262,7 @@ h3 { font-size: 16px; margin-bottom: 12px; }
 .product-line-info .p-name { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #e0e7ff, #ede9fe); color: #3730a3 !important; font-weight: 700; font-size: 14px; padding: 5px 12px; border-radius: 16px; border: 1px solid #c7d2fe; margin-bottom: 4px; }
 .product-line-info .p-qty { display: inline-flex; align-items: center; background: linear-gradient(135deg, #dcfce7, #d1fae5); color: #15803d !important; font-weight: 800; font-size: 14px; padding: 5px 12px; border-radius: 16px; border: 1px solid #86efac; margin-left: 6px; margin-bottom: 4px; }
 .product-line-info .amt-tag { display: inline-flex; align-items: center; background: linear-gradient(135deg, #fef3c7, #fde68a); color: #92400e !important; font-weight: 800; font-size: 13px; padding: 5px 12px; border-radius: 16px; border: 1px solid #fcd34d; margin-left: 6px; margin-bottom: 4px; }
+.product-line-info .date-tag { display: inline-flex; align-items: center; gap: 4px; background: linear-gradient(135deg, #dbeafe, #bfdbfe); color: #1e40af !important; font-weight: 700; font-size: 11px; padding: 3px 10px; border-radius: 12px; border: 1px solid #93c5fd; margin-left: 6px; margin-bottom: 4px; }
 .route-breakdown-line .rb-name { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #e0e7ff, #ede9fe); color: #3730a3 !important; font-weight: 700; font-size: 13px; padding: 4px 12px; border-radius: 14px; border: 1px solid #c7d2fe; }
 .route-breakdown-line .rb-qty { display: inline-flex; align-items: center; background: linear-gradient(135deg, #dcfce7, #d1fae5) !important; color: #15803d !important; font-weight: 800; font-size: 13px; padding: 4px 12px; border-radius: 14px; border: 1px solid #86efac; }
 .route-total-breakdown .route-breakdown-line .rb-name { background: rgba(255, 255, 255, 0.2); color: #ffffff !important; border-color: rgba(255, 255, 255, 0.35); }
@@ -1428,4 +1543,9 @@ h3 { font-size: 16px; margin-bottom: 12px; }
   .order-detail-item-row .odir-name,
   .order-detail-item-row .odir-qty,
   .order-detail-item-row .odir-amount { font-size: 11px; padding: 3px 9px; }
+  .date-range-filter .drf-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .date-range-filter .drf-field input { font-size: 12px; padding: 8px 10px; }
+  .date-range-filter .drf-quick-btn { font-size: 11px; padding: 7px 6px; min-width: 60px; }
+  .dash-header-btns { width: 100%; justify-content: flex-start; }
+  .edit-dash-btn, .edit-date-btn { font-size: 12px; padding: 8px 12px; }
 }
