@@ -1,7 +1,7 @@
 // ================== SERVICE WORKER ==================
-// Version v6 — naye features add kiye (Accounts, Farzi, WhatsApp Queue)
+// Version v9 — Feature #7 (Dashboard Date Filter Collapse) + Super Admin Code
 
-var CACHE_NAME = 'atta-chakki-v6';
+var CACHE_NAME = 'atta-chakki-v9';
 var urlsToCache = [
   './',
   './index.html',
@@ -14,7 +14,7 @@ var urlsToCache = [
 
 // ================== INSTALL ==================
 self.addEventListener('install', function(event) {
-  console.log('✅ Service Worker v6 installing...');
+  console.log('✅ Service Worker v9 installing...');
   event.waitUntil(
     caches.open(CACHE_NAME).then(function(cache) {
       console.log('✅ Files cached');
@@ -32,7 +32,7 @@ self.addEventListener('install', function(event) {
 
 // ================== ACTIVATE ==================
 self.addEventListener('activate', function(event) {
-  console.log('✅ Service Worker v6 activated');
+  console.log('✅ Service Worker v9 activated');
   event.waitUntil(
     caches.keys().then(function(cacheNames) {
       return Promise.all(
