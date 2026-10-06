@@ -40,18 +40,26 @@ var currentQueueReminderCount = 0;
 var currentEditingWasooliId = null;
 var currentDeletingWasooliId = null;
 
-// =====================================================
-// Feature #4: MULTI-TENANT VARIABLES
-// =====================================================
+// Feature #4: Multi-tenant variables
 var currentBusinessId = null;
 var currentBusinessName = null;
 var LEGACY_BUSINESS_ID = 'legacy_biz_001';
+var SUPER_ADMIN_CODE_DEFAULT = 'ATTACHAKKI-ADMIN-2024';
 
-// Feature #1 & #2 ke naye variables
+// Feature #1 & #2
 var currentOrderDetailShopId = null;
 var currentOrderDetailReadOnly = false;
 var currentSplitOrderId = null;
 var currentSplitItems = [];
+
+// Feature #5 + #7: Date Range + Collapse
+var dashboardDateRange = { from: '', to: '' };
+var ordersDateRange = { from: '', to: '' };
+var deliveryDateRange = { from: '', to: '' };
+var dashboardQuickRange = 'month';
+var ordersQuickRange = 'month';
+var deliveryQuickRange = 'month';
+var dashboardDateFilterOpen = false; // Feature #7: default band
 
 function initFirebase(callback) {
   if (firebaseLoaded) { if (callback) callback(); return; }
@@ -125,16 +133,166 @@ var DEFAULT_MENU = [
 var DEFAULT_DASHBOARD = [
   { key: 'bigButtons', label: 'Big Buttons', show: true, size: 100, view: 'grid' },
   { key: 'cards', label: '4 Cards', show: true, size: 100, view: 'grid' },
-  { key: 'pendingShops', label: "Today's Pending Shops", show: true, size: 100, view: 'list' },
-  { key: 'load', label: 'Aaj Ka Load', show: true, size: 100, view: 'list' },
-  { key: 'routes', label: 'Aaj Ke Routes', show: true, size: 100, view: 'list' }
+  { key: 'pendingShops', label: "Pending Shops", show: true, size: 100, view: 'list' },
+  { key: 'load', label: 'Total Load', show: true, size: 100, view: 'list' },
+  { key: 'routes', label: 'Delivery Routes', show: true, size: 100, view: 'list' }
 ];
 
-// =====================================================
-// Feature #4: Business ID Generator
-// =====================================================
 function generateBusinessId() {
   return 'biz_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+}
+
+// =====================================================
+// Feature #5: Date Range Helpers
+// =====================================================
+function getTodayStr() {
+  var d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function getDateOffset(days, months) {
+  var d = new Date();
+  if (days) d.setDate(d.getDate() - days);
+  if (months) d.setMonth(d.getMonth() - months);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function getDefaultRange() {
+  return { from: getDateOffset(0, 1), to: getTodayStr() };
+}
+function getQuickRange(type) {
+  var today = getTodayStr();
+  if (type === 'today') return { from: today, to: today };
+  if (type === 'days') return { from: getDateOffset(7, 0), to: today };
+  if (type === 'month') return { from: getDateOffset(0, 1), to: today };
+  if (type === 'months') return { from: getDateOffset(0, 3), to: today };
+  return getDefaultRange();
+}
+function initDateRanges() {
+  var def = getDefaultRange();
+  dashboardDateRange = { from: def.from, to: def.to };
+  ordersDateRange = { from: def.from, to: def.to };
+  deliveryDateRange = { from: def.from, to: def.to };
+  var dFrom = document.getElementById('dashboardFromDate');
+  var dTo = document.getElementById('dashboardToDate');
+  if (dFrom) dFrom.value = def.from;
+  if (dTo) dTo.value = def.to;
+  var oFrom = document.getElementById('ordersFromDate');
+  var oTo = document.getElementById('ordersToDate');
+  if (oFrom) oFrom.value = def.from;
+  if (oTo) oTo.value = def.to;
+  var delFrom = document.getElementById('deliveryFromDate');
+  var delTo = document.getElementById('deliveryToDate');
+  if (delFrom) delFrom.value = def.from;
+  if (delTo) delTo.value = def.to;
+  updateDashboardRangeText();
+}
+function updateDashboardRangeText() {
+  var el = document.getElementById('dashboardRangeText');
+  if (!el) return;
+  if (dashboardDateRange.from && dashboardDateRange.to) {
+    el.textContent = formatDate(dashboardDateRange.from) + ' - ' + formatDate(dashboardDateRange.to);
+  } else {
+    el.textContent = '—';
+  }
+}
+function onDashboardDateChange() {
+  var f = document.getElementById('dashboardFromDate').value;
+  var t = document.getElementById('dashboardToDate').value;
+  if (f && t && f <= t) {
+    dashboardDateRange.from = f;
+    dashboardDateRange.to = t;
+    dashboardQuickRange = null;
+    document.querySelectorAll('#dashboardDateFilter .drf-quick-btn').forEach(function(b) { b.classList.remove('active'); });
+    updateDashboardRangeText();
+    renderDashboard();
+  } else if (f && t) {
+    showToast('From date To date se badi nahi ho sakti', 'warning', 2000);
+    document.getElementById('dashboardFromDate').value = dashboardDateRange.from;
+    document.getElementById('dashboardToDate').value = dashboardDateRange.to;
+  }
+}
+function onOrdersDateChange() {
+  var f = document.getElementById('ordersFromDate').value;
+  var t = document.getElementById('ordersToDate').value;
+  if (f && t && f <= t) {
+    ordersDateRange.from = f;
+    ordersDateRange.to = t;
+    ordersQuickRange = null;
+    document.querySelectorAll('#orders .drf-quick-btn').forEach(function(b) { b.classList.remove('active'); });
+    renderOrdersPage();
+  } else if (f && t) {
+    showToast('From date To date se badi nahi ho sakti', 'warning', 2000);
+    document.getElementById('ordersFromDate').value = ordersDateRange.from;
+    document.getElementById('ordersToDate').value = ordersDateRange.to;
+  }
+}
+function onDeliveryDateChange() {
+  var f = document.getElementById('deliveryFromDate').value;
+  var t = document.getElementById('deliveryToDate').value;
+  if (f && t && f <= t) {
+    deliveryDateRange.from = f;
+    deliveryDateRange.to = t;
+    deliveryQuickRange = null;
+    document.querySelectorAll('#delivery .drf-quick-btn').forEach(function(b) { b.classList.remove('active'); });
+    renderDelivery();
+  } else if (f && t) {
+    showToast('From date To date se badi nahi ho sakti', 'warning', 2000);
+    document.getElementById('deliveryFromDate').value = deliveryDateRange.from;
+    document.getElementById('deliveryToDate').value = deliveryDateRange.to;
+  }
+}
+function setDashboardQuickRange(num, type) {
+  var r = getQuickRange(type);
+  dashboardDateRange = { from: r.from, to: r.to };
+  document.getElementById('dashboardFromDate').value = r.from;
+  document.getElementById('dashboardToDate').value = r.to;
+  dashboardQuickRange = type;
+  document.querySelectorAll('#dashboardDateFilter .drf-quick-btn').forEach(function(b) { b.classList.remove('active'); });
+  if (event && event.target) event.target.classList.add('active');
+  updateDashboardRangeText();
+  renderDashboard();
+}
+function setOrdersQuickRange(num, type) {
+  var r = getQuickRange(type);
+  ordersDateRange = { from: r.from, to: r.to };
+  document.getElementById('ordersFromDate').value = r.from;
+  document.getElementById('ordersToDate').value = r.to;
+  ordersQuickRange = type;
+  document.querySelectorAll('#orders .drf-quick-btn').forEach(function(b) { b.classList.remove('active'); });
+  if (event && event.target) event.target.classList.add('active');
+  renderOrdersPage();
+}
+function setDeliveryQuickRange(num, type) {
+  var r = getQuickRange(type);
+  deliveryDateRange = { from: r.from, to: r.to };
+  document.getElementById('deliveryFromDate').value = r.from;
+  document.getElementById('deliveryToDate').value = r.to;
+  deliveryQuickRange = type;
+  document.querySelectorAll('#delivery .drf-quick-btn').forEach(function(b) { b.classList.remove('active'); });
+  if (event && event.target) event.target.classList.add('active');
+  renderDelivery();
+}
+function isOrderInRange(orderDate, range) {
+  if (!range.from || !range.to) return true;
+  return orderDate >= range.from && orderDate <= range.to;
+}
+
+// =====================================================
+// Feature #7: Toggle Dashboard Date Filter
+// =====================================================
+function toggleDashboardDateFilter() {
+  dashboardDateFilterOpen = !dashboardDateFilterOpen;
+  var filterEl = document.getElementById('dashboardDateFilter');
+  var editBtn = document.getElementById('editDateBtn');
+  var doneBtn = document.getElementById('doneDateBtn');
+  if (dashboardDateFilterOpen) {
+    filterEl.style.display = 'block';
+    editBtn.style.display = 'none';
+    doneBtn.style.display = 'inline-block';
+  } else {
+    filterEl.style.display = 'none';
+    editBtn.style.display = 'inline-block';
+    doneBtn.style.display = 'none';
+  }
 }
 
 function formatRs(amount) {
@@ -357,10 +515,6 @@ function loadAccountsQueueFromLocalStorage() {
     if (q) offlineAccountsQueue = JSON.parse(q) || [];
   } catch (e) { offlineAccountsQueue = []; }
 }
-
-// =====================================================
-// Feature #4: Business-filtered listeners
-// =====================================================
 function setupRealtimeListeners() {
   if (!firebaseReady) return;
   if (!currentBusinessId) { console.log('⚠️ No businessId — listeners skipped'); return; }
@@ -523,10 +677,6 @@ function mergeOfflineRoutes() {
   }
 }
 function loadAllData(callback) { setupRealtimeListeners(); setTimeout(function() { if (callback) callback(); }, 800); }
-
-// =====================================================
-// Feature #4: saveToFirebase with auto businessId
-// =====================================================
 function saveToFirebase(collection, id, data) {
   if (!firebaseReady) return Promise.reject('Firebase not ready');
   if (currentBusinessId && data && !data.businessId) {
@@ -558,10 +708,6 @@ function saveSettingsFirebase() {
   saveToFirebase('settings', 'products_' + currentBusinessId, { list: products, businessId: currentBusinessId });
   saveToFirebase('settings', 'business_' + currentBusinessId, { bizName: settings.bizName, businessId: currentBusinessId });
 }
-
-// =====================================================
-// Feature #4: Reset only own business data
-// =====================================================
 function confirmResetAllData() {
   if (!isAdmin()) { showToast('Sirf Admin reset kar sakta hai', 'error'); return; }
   resetConfirmStage = 0;
@@ -1049,7 +1195,6 @@ function renderAccountDetailEntries() {
   for (var i = 0; i < entries.length; i++) {
     var e = entries[i];
     var icon = e.type === 'order' ? '📦' : '💵';
-    // Feature #3: Order ke saath quantity bhi dikhao
     var label = e.type === 'order'
       ? 'Order: ' + (e.productName || '') + ' (' + qtyText(e.maund, e.kg) + ')'
       : 'Wasooli';
@@ -1206,10 +1351,6 @@ function confirmDeleteWasooli(btn) {
     if (totalEl) totalEl.textContent = formatRs(getShopTotalKhata(currentAccountShopId));
   }, 200);
 }
-
-// =====================================================
-// Feature #3: addToAccount with maund, kg + businessId
-// =====================================================
 function addToAccount(shopId, amount, type, orderId, productName, note, maund, kg) {
   var entry = {
     shopId: shopId, type: type, amount: parseInt(amount) || 0,
@@ -1275,13 +1416,9 @@ function addOrderAmountToAccountIfNeeded(order) {
   if (modal) modal.classList.add('active');
 }
 
-// =====================================================
-// Feature #1: Order Detail Modal
-// =====================================================
 function openOrderDetailModal(shopId, options) {
   options = options || {};
   var readOnly = options.readOnly === true;
-  var today = todayStr();
   var shop = getShopById(shopId);
   if (!shop) return;
   var sOrders = [];
@@ -1334,10 +1471,11 @@ function openOrderDetailModal(shopId, options) {
     if (o.status === 'Delivered') statusBadge = '<span class="badge delivered">Delivered</span>';
     else if (o.status === 'Partial') statusBadge = '<span class="badge partial">Partial</span>';
     else statusBadge = '<span class="badge pending">Pending</span>';
+    var dateTag = '<div class="odh-date"><i class="fa fa-calendar"></i> ' + formatDate(o.date) + ' • ' + getOrderDateTimeText(o) + '</div>';
     html += '<div class="order-detail-card">' +
       '<div class="order-detail-card-head">' +
         '<div class="odh-title"><i class="fa fa-receipt"></i> Order #' + (i + 1) + ' ' + statusBadge + '</div>' +
-        '<div class="odh-date"><i class="fa fa-calendar"></i> ' + getOrderDateTimeText(o) + '</div>' +
+        dateTag +
       '</div>' +
       '<div class="order-detail-items">' + itemsHtml + '</div>' +
       '<div class="order-detail-card-subtotal">' +
@@ -1451,9 +1589,6 @@ function deliverAllOrdersFromModal(shopId, btn) {
   }, 300);
 }
 
-// =====================================================
-// Feature #2: Payment Split Modal (Farzi)
-// =====================================================
 function openPaymentSplitModal(order) {
   if (!order) return;
   currentSplitOrderId = order.id;
@@ -1476,8 +1611,6 @@ function openPaymentSplitModal(order) {
     });
   }
   var orderPaid = parseInt(order.paidAmount) || 0;
-  var orderPending = parseInt(order.pendingAmount);
-  if (isNaN(orderPending)) orderPending = totalOrderAmount - orderPaid;
   var nameEl = document.getElementById('splitShopName');
   var shop = getShopById(order.shopId);
   if (nameEl && shop) {
@@ -1836,7 +1969,7 @@ function renderFarziDetailOrders(shopId) {
     if (isNaN(pendAmt)) pendAmt = parseInt(o.totalAmount) || 0;
     html += '<div class="pending-order-row">' +
       '<div class="por-info">' +
-        '<div style="font-weight:700;color:#1e293b;margin-bottom:4px;">Order — ' + formatDateTimeObj(new Date(o.createdAt)) + '</div>' +
+        '<div style="font-weight:700;color:#1e293b;margin-bottom:4px;">📅 ' + formatDate(o.date) + ' — Order</div>' +
         '<div style="font-size:12px;color:#64748b;">' + itemsText + '</div>' +
       '</div>' +
       '<div style="text-align:right;">' +
@@ -1993,7 +2126,8 @@ function openWhatsappShareModal(order, shop) {
   var bizName = settings.bizName || 'Atta Chakki';
   var itemsText = formatOrderItemsText(order.items);
   var totalAmtText = order.totalAmount ? '\n\n💰 Total Amount: ' + formatRs(order.totalAmount) : '';
-  var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n📅 ' + getOrderDateTimeText(order) + '\n\nAap ka order book ho chuka hai:\n\n' + itemsText + totalAmtText + '\n\nInshallah jald hi deliver ho jayega.\nShukriya!\n- ' + bizName + '\n\n👤 Created by: ' + getCurrentUserDisplayForWa();
+  var dateLine = '📅 ' + formatDate(order.date) + ' • ' + getOrderDateTimeText(order);
+  var msg = 'Assalam-o-Alaikum ' + shop.name + '!\n\n' + dateLine + '\n\nAap ka order book ho chuka hai:\n\n' + itemsText + totalAmtText + '\n\nInshallah jald hi deliver ho jayega.\nShukriya!\n- ' + bizName + '\n\n👤 Created by: ' + getCurrentUserDisplayForWa();
   if (!isOnline) {
     saveToWhatsappQueue({ message: msg, mobile: number, shopName: shop.name, type: 'order' });
     showToast('📴 Offline — WhatsApp message queue mein save ho gaya', 'warning', 4000);
@@ -2141,15 +2275,8 @@ function cleanupRouteAfterDelivery() {
   if (routesChanged) { renderRoutes(); renderDashboardRoutes(); }
 }
 function autoShiftPendingOrders() {
-  if (!firebaseReady) return;
-  var today = todayStr(); var shifted = 0;
-  for (var i = 0; i < orders.length; i++) {
-    var o = orders[i];
-    if ((o.status === 'Pending' || o.status === 'Partial') && o.date !== today && o.date < today) {
-      o.date = today; o.autoShifted = true; saveToFirebase('orders', o.id, o); shifted++;
-    }
-  }
-  if (shifted > 0) console.log(shifted + ' pending orders shifted');
+  // Feature #5: Disabled — orders apni asal date pe rahenge
+  console.log('ℹ️ Auto-shift disabled (Feature #5)');
 }
 function goBack() {
   var activePage = document.querySelector('.page.active');
@@ -2248,57 +2375,72 @@ function can(permission) {
   if (!currentUser.perms) return false;
   return currentUser.perms[permission] === true;
 }
-
-// =====================================================
-// Feature #4: doSignup with Business Name + Business ID
-// =====================================================
+function getSuperAdminCode(callback) {
+  if (!firebaseReady) { callback(SUPER_ADMIN_CODE_DEFAULT); return; }
+  db.collection('settings').doc('superAdminCode').get().then(function(doc) {
+    if (doc.exists && doc.data().code) {
+      callback(doc.data().code);
+    } else {
+      db.collection('settings').doc('superAdminCode').set({ code: SUPER_ADMIN_CODE_DEFAULT, createdAt: new Date().toISOString() });
+      callback(SUPER_ADMIN_CODE_DEFAULT);
+    }
+  }).catch(function(e) {
+    console.log('Super admin code fetch error:', e);
+    callback(SUPER_ADMIN_CODE_DEFAULT);
+  });
+}
 function doSignup() {
   var bizNameEl = document.getElementById('signupBizName');
   var businessName = bizNameEl ? bizNameEl.value.trim() : '';
   var user = document.getElementById('signupUser').value.trim();
   var pass = document.getElementById('signupPass').value;
   var pass2 = document.getElementById('signupPass2').value;
+  var superCodeEl = document.getElementById('signupSuperCode');
+  var superCode = superCodeEl ? superCodeEl.value.trim() : '';
   var err = document.getElementById('loginError');
   err.textContent = '';
   if (!businessName) { err.textContent = 'Business ka naam daalein'; return; }
   if (!user || !pass) { err.textContent = 'Username aur password daalein'; return; }
   if (pass.length < 4) { err.textContent = 'Password kam az kam 4 characters'; return; }
   if (pass !== pass2) { err.textContent = 'Password match nahi'; return; }
+  if (!superCode) { err.textContent = 'Super Admin Code daalein'; return; }
   if (!firebaseReady) { err.textContent = 'Firebase load nahi hua.'; return; }
   if (!isOnline) { err.textContent = 'Internet zaroori hai'; return; }
-  err.textContent = 'Account bana rahe hain...';
-  db.collection('users').where('user', '==', user).get().then(function(snap) {
-    if (!snap.empty) { err.textContent = 'Ye username pehle se mojood hai — koi aur username try karein'; return; }
-    var newBusinessId = generateBusinessId();
-    var adminUser = {
-      user: user, pass: pass, display: user, isAdmin: true, pin: '',
-      businessId: newBusinessId,
-      businessName: businessName,
-      perms: { newOrder: true, deliver: true, shopkeepers: true, history: true, settings: true, routes: true, accounts: true },
-      menuLayout: JSON.parse(JSON.stringify(DEFAULT_MENU)),
-      dashboardLayout: JSON.parse(JSON.stringify(DEFAULT_DASHBOARD)),
-      createdAt: new Date().toISOString()
-    };
-    db.collection('users').add(adminUser).then(function(ref) {
-      // Business ka settings doc bhi banao
-      db.collection('settings').doc('business_' + newBusinessId).set({
-        bizName: businessName, businessId: newBusinessId
-      }).catch(function(e) { console.log('Business settings error:', e); });
-      db.collection('settings').doc('products_' + newBusinessId).set({
-        list: ['Aata', 'Besan', 'Chawal ka Atta'], businessId: newBusinessId
-      }).catch(function(e) { console.log('Products settings error:', e); });
-      err.textContent = '';
-      showToast('✅ Admin account ban gaya! Ab login karein.', 'success', 4000);
-      hideSignup();
-      document.getElementById('loginUser').value = user;
-      document.getElementById('loginPass').value = '';
+  err.textContent = 'Code check kar rahe hain...';
+  getSuperAdminCode(function(validCode) {
+    if (superCode !== validCode) {
+      err.textContent = '❌ Ghalat Super Admin Code. Aap admin account nahi bana sakte.';
+      return;
+    }
+    err.textContent = 'Account bana rahe hain...';
+    db.collection('users').where('user', '==', user).get().then(function(snap) {
+      if (!snap.empty) { err.textContent = 'Ye username pehle se mojood hai — koi aur username try karein'; return; }
+      var newBusinessId = generateBusinessId();
+      var adminUser = {
+        user: user, pass: pass, display: user, isAdmin: true, pin: '',
+        businessId: newBusinessId,
+        businessName: businessName,
+        perms: { newOrder: true, deliver: true, shopkeepers: true, history: true, settings: true, routes: true, accounts: true },
+        menuLayout: JSON.parse(JSON.stringify(DEFAULT_MENU)),
+        dashboardLayout: JSON.parse(JSON.stringify(DEFAULT_DASHBOARD)),
+        createdAt: new Date().toISOString()
+      };
+      db.collection('users').add(adminUser).then(function(ref) {
+        db.collection('settings').doc('business_' + newBusinessId).set({
+          bizName: businessName, businessId: newBusinessId
+        }).catch(function(e) { console.log('Business settings error:', e); });
+        db.collection('settings').doc('products_' + newBusinessId).set({
+          list: ['Aata', 'Besan', 'Chawal ka Atta'], businessId: newBusinessId
+        }).catch(function(e) { console.log('Products settings error:', e); });
+        err.textContent = '';
+        showToast('✅ Admin account ban gaya! Ab login karein.', 'success', 4000);
+        hideSignup();
+        document.getElementById('loginUser').value = user;
+        document.getElementById('loginPass').value = '';
+      }).catch(function(e) { err.textContent = 'Error: ' + e.message; });
     }).catch(function(e) { err.textContent = 'Error: ' + e.message; });
-  }).catch(function(e) { err.textContent = 'Error: ' + e.message; });
+  });
 }
-
-// =====================================================
-// Feature #4: doLogin with businessId set
-// =====================================================
 function doLogin() {
   var user = document.getElementById('loginUser').value.trim();
   var pass = document.getElementById('loginPass').value;
@@ -2341,6 +2483,7 @@ function hideSignup() {
   document.getElementById('signupUser').value = ''; 
   document.getElementById('signupPass').value = ''; 
   document.getElementById('signupPass2').value = ''; 
+  var sc = document.getElementById('signupSuperCode'); if (sc) sc.value = '';
 }
 function doLogout() {
   if (!confirm('Logout karna hai?')) return;
@@ -2348,7 +2491,6 @@ function doLogout() {
   snapshotListeners = {}; offlineOrdersQueue = []; offlineRoutesQueue = [];
   isLoggedIn = false; currentUser = null;
   currentBusinessId = null; currentBusinessName = null;
-  // Clear all data arrays
   shopkeepers = []; orders = []; routes = []; accounts = []; whatsappQueue = []; users = [];
   localStorage.setItem('isLoggedIn', 'false'); localStorage.removeItem('currentUser');
   showLoginScreenOnly();
@@ -2372,6 +2514,15 @@ function changePassword() {
 }
 function showApp() {
   loadLayouts(); renderSidebarNav(); applySettings();
+  initDateRanges();
+  // Feature #7: Default band
+  dashboardDateFilterOpen = false;
+  var filterEl = document.getElementById('dashboardDateFilter');
+  if (filterEl) filterEl.style.display = 'none';
+  var editBtn = document.getElementById('editDateBtn');
+  if (editBtn) editBtn.style.display = 'inline-block';
+  var doneBtn = document.getElementById('doneDateBtn');
+  if (doneBtn) doneBtn.style.display = 'none';
   renderDashboard(); renderShopkeepers(); prepareOrderForm();
   renderHistory(); renderSettings(); renderRoutes();
   renderRouteShopPicker(); renderPinSettings();
@@ -2380,7 +2531,7 @@ function showApp() {
   updateQueueBadge();
   if (isAdmin()) renderUsers();
   updateOnlineStatus();
-  if (firebaseReady) { setupRealtimeListeners(); setTimeout(function() { autoShiftPendingOrders(); renderDashboard(); }, 1500); }
+  if (firebaseReady) { setupRealtimeListeners(); setTimeout(function() { renderDashboard(); }, 1500); }
   initBackButtonHandling();
   loadAccountsQueueFromLocalStorage();
   setTimeout(function() { if (isOnline) syncOfflineAccountsQueue(); }, 2000);
@@ -2396,7 +2547,7 @@ function manualSync() {
   for (var key in snapshotListeners) { if (snapshotListeners[key]) { try { snapshotListeners[key](); } catch (e) {} } }
   snapshotListeners = {};
   setTimeout(function() {
-    setupRealtimeListeners(); autoShiftPendingOrders(); syncOfflineAccountsQueue();
+    setupRealtimeListeners(); syncOfflineAccountsQueue();
     if (icon) icon.className = 'fa fa-sync-alt';
     if (btn) btn.disabled = false;
     showToast('✅ Sync ho gaya!', 'success', 2000);
@@ -2493,7 +2644,7 @@ function showPage(pageId, btn) {
   if (pageId === 'dashboard') { mergeOfflineOrders(); mergeOfflineRoutes(); mergeOfflineAccounts(); renderDashboard(); applyDashboardLayout(); updateDashboardQueueBanner(); }
   if (pageId === 'shopkeepers') renderShopkeepers();
   if (pageId === 'neworder') prepareOrderForm();
-  if (pageId === 'orders') { var dEl = document.getElementById('ordersDate'); if (dEl && !dEl.value) dEl.value = todayStr(); mergeOfflineOrders(); renderOrdersPage(); }
+  if (pageId === 'orders') { mergeOfflineOrders(); renderOrdersPage(); }
   if (pageId === 'delivery') { mergeOfflineOrders(); renderDelivery(); }
   if (pageId === 'history') { renderHistory(); populateSalesFilters(); renderSalesReport(); }
   if (pageId === 'settings') { renderSettings(); renderPinSettings(); renderHiddenMenuList(); updateSettingsSyncStatus(); }
@@ -2560,7 +2711,6 @@ function saveUser(btn) {
   var display = document.getElementById('newUserDisplay').value.trim();
   if (!user || !pass) { showToast('Username aur password zaroori!', 'warning'); return; }
   if (pass.length < 4) { showToast('Password kam az kam 4 characters', 'warning'); return; }
-  // Globally unique check
   db.collection('users').where('user', '==', user).get().then(function(snap) {
     var conflict = false;
     snap.forEach(function(doc) {
@@ -2579,7 +2729,6 @@ function saveUser(btn) {
       accounts: document.getElementById('permAccounts').checked
     };
     if (id) {
-      // Edit existing
       var updateData = {
         user: user, pass: pass, display: display || user, perms: perms
       };
@@ -2684,17 +2833,37 @@ function renderUsers() {
   list.innerHTML = html;
 }
 function renderDashboard() {
-  var today = todayStr();
   var dateLabel = document.getElementById('todayDateLabel');
-  if (dateLabel) dateLabel.textContent = formatDateLong(today);
+  if (dateLabel) dateLabel.textContent = formatDateLong(todayStr());
+  var filteredOrders = [];
+  for (var i = 0; i < orders.length; i++) {
+    if (isOrderInRange(orders[i].date, dashboardDateRange)) filteredOrders.push(orders[i]);
+  }
+  var totalOrders = filteredOrders.length;
+  var pendingCount = 0, deliveredCount = 0;
+  for (var i = 0; i < filteredOrders.length; i++) {
+    if (filteredOrders[i].status === 'Pending' || filteredOrders[i].status === 'Partial') pendingCount++;
+    else if (filteredOrders[i].status === 'Delivered') deliveredCount++;
+  }
   document.getElementById('totalShopkeepers').textContent = shopkeepers.length;
-  document.getElementById('todayOrders').textContent = orders.filter(function(o) { return o.date === today; }).length;
-  document.getElementById('pendingOrders').textContent = orders.filter(function(o) { return o.status === 'Pending' || o.status === 'Partial'; }).length;
-  document.getElementById('deliveredOrders').textContent = orders.filter(function(o) { return o.status === 'Delivered'; }).length;
-  var todayPending = orders.filter(function(o) { return o.date === today && (o.status === 'Pending' || o.status === 'Partial'); });
+  document.getElementById('todayOrders').textContent = totalOrders;
+  document.getElementById('pendingOrders').textContent = pendingCount;
+  document.getElementById('deliveredOrders').textContent = deliveredCount;
+  var rangeText = '';
+  if (dashboardDateRange.from && dashboardDateRange.to) {
+    rangeText = formatDate(dashboardDateRange.from) + ' - ' + formatDate(dashboardDateRange.to);
+  }
+  var lbl1 = document.getElementById('todayOrdersLabel'); if (lbl1) lbl1.textContent = rangeText ? rangeText : 'Selected Range';
+  var lbl2 = document.getElementById('pendingOrdersLabel'); if (lbl2) lbl2.textContent = 'Pending';
+  var lbl3 = document.getElementById('deliveredOrdersLabel'); if (lbl3) lbl3.textContent = 'Delivered';
+
+  var pendingOrders = [];
+  for (var i = 0; i < filteredOrders.length; i++) {
+    if (filteredOrders[i].status === 'Pending' || filteredOrders[i].status === 'Partial') pendingOrders.push(filteredOrders[i]);
+  }
   var totalKg = 0;
-  for (var i = 0; i < todayPending.length; i++) {
-    var o = todayPending[i];
+  for (var i = 0; i < pendingOrders.length; i++) {
+    var o = pendingOrders[i];
     for (var j = 0; j < o.items.length; j++) {
       var it = o.items[j];
       var remM = (parseInt(it.maund) || 0) - (parseInt(it.deliveredMaund) || 0);
@@ -2704,11 +2873,11 @@ function renderDashboard() {
   }
   document.getElementById('todayLoadBadge').textContent = totalKgText(totalKg);
   var list = document.getElementById('todayLoadList');
-  if (todayPending.length === 0) { list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Aaj koi pending order nahi.</div>'; }
+  if (pendingOrders.length === 0) { list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Is range mein koi pending order nahi.</div>'; }
   else {
     var byProduct = {};
-    for (var i = 0; i < todayPending.length; i++) {
-      var o = todayPending[i];
+    for (var i = 0; i < pendingOrders.length; i++) {
+      var o = pendingOrders[i];
       for (var j = 0; j < o.items.length; j++) {
         var it = o.items[j];
         var remM = (parseInt(it.maund) || 0) - (parseInt(it.deliveredMaund) || 0);
@@ -2727,24 +2896,24 @@ function renderDashboard() {
   renderDashboardRoutes();
 }
 function renderPendingShopkeeperList() {
-  var today = todayStr();
   var list = document.getElementById('pendingShopList');
   var badge = document.getElementById('pendingShopBadge');
   if (!list) return;
   var grouped = {};
   for (var i = 0; i < orders.length; i++) {
     var o = orders[i];
-    if (o.date !== today) continue;
+    if (!isOrderInRange(o.date, dashboardDateRange)) continue;
     if (o.status !== 'Pending' && o.status !== 'Partial') continue;
-    if (!grouped[o.shopId]) grouped[o.shopId] = { count: 0, usernames: {}, totalAmount: 0 };
+    if (!grouped[o.shopId]) grouped[o.shopId] = { count: 0, usernames: {}, totalAmount: 0, dates: {} };
     grouped[o.shopId].count++;
     var amt = parseInt(o.totalAmount) || 0;
     grouped[o.shopId].totalAmount += amt;
+    if (o.date) grouped[o.shopId].dates[o.date] = true;
     if (o.createdBy) grouped[o.shopId].usernames[o.createdBy] = true;
   }
   var shopIds = Object.keys(grouped);
   if (badge) badge.textContent = shopIds.length;
-  if (shopIds.length === 0) { list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Aaj koi pending shopkeeper order nahi.</div>'; return; }
+  if (shopIds.length === 0) { list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Is range mein koi pending shopkeeper order nahi.</div>'; return; }
   var html = '';
   for (var k = 0; k < shopIds.length; k++) {
     var sid = shopIds[k]; var shopName = 'Unknown'; var hasOffline = false; var shopObj = null;
@@ -2752,16 +2921,22 @@ function renderPendingShopkeeperList() {
     for (var i = 0; i < orders.length; i++) { if (orders[i].shopId == sid && orders[i]._offlinePending) { hasOffline = true; break; } }
     var count = grouped[sid].count;
     var totalAmt = grouped[sid].totalAmount;
-    var summaryText = getShopOrderSummaryText(sid);
     var offlineClass = hasOffline ? ' offline-pending' : '';
     var farziClass = (shopObj && shopObj.category === 'farzi') ? ' farzi-card' : '';
     var userBadgesHtml = '';
     var usernames = Object.keys(grouped[sid].usernames);
     for (var u = 0; u < usernames.length; u++) userBadgesHtml += getUserBadgeHtml(usernames[u], 'tiny');
+    var datesArr = Object.keys(grouped[sid].dates).sort();
+    var dateSummary = '';
+    if (datesArr.length > 0 && datesArr.length <= 3) {
+      dateSummary = '📅 ' + datesArr.map(function(d) { return formatDate(d); }).join(', ');
+    } else if (datesArr.length > 3) {
+      dateSummary = '📅 ' + formatDate(datesArr[0]) + ' … ' + formatDate(datesArr[datesArr.length - 1]) + ' (' + datesArr.length + ' dates)';
+    }
     html += '<div class="pending-shop-name' + offlineClass + farziClass + '" onclick="openPendingShopModal(\'' + sid + '\')">' +
       '<div class="psn-info">' +
         '<span class="name-text"><i class="fa fa-store shop-icon"></i> ' + shopName + ' ' + userBadgesHtml + '</span>' +
-        (summaryText ? '<span class="psn-summary">📦 ' + summaryText + '</span>' : '') +
+        (dateSummary ? '<span class="psn-dates">' + dateSummary + '</span>' : '') +
         (totalAmt > 0 ? '<span class="psn-amount">💰 ' + formatRs(totalAmt) + '</span>' : '') +
       '</div>' +
       '<span><span class="order-count">' + count + '</span><i class="fa fa-chevron-right arrow-icon"></i></span></div>';
@@ -2769,16 +2944,18 @@ function renderPendingShopkeeperList() {
   list.innerHTML = html;
 }
 function openPendingShopModal(shopId) {
-  var today = todayStr();
   var shopName = 'Unknown', shopMobile = '';
   for (var i = 0; i < shopkeepers.length; i++) { if (shopkeepers[i].id == shopId) { shopName = shopkeepers[i].name; shopMobile = shopkeepers[i].mobile; } }
-  document.getElementById('pendingShopTitle').textContent = shopName + ' - Aaj Ke Orders';
+  document.getElementById('pendingShopTitle').textContent = shopName + ' - Orders';
   document.getElementById('pendingShopModal').setAttribute('data-shop-id', shopId);
   currentPendingShopId = shopId;
   var sOrders = [];
   for (var i = 0; i < orders.length; i++) {
     var o = orders[i];
-    if (o.shopId == shopId && o.date === today && (o.status === 'Pending' || o.status === 'Partial')) sOrders.push(o);
+    if (o.shopId != shopId) continue;
+    if (!isOrderInRange(o.date, dashboardDateRange)) continue;
+    if (o.status !== 'Pending' && o.status !== 'Partial') continue;
+    sOrders.push(o);
   }
   var body = document.getElementById('pendingShopBody');
   if (sOrders.length === 0) { body.innerHTML = '<div class="empty">Koi pending order nahi.</div>'; document.getElementById('pendingShopModal').classList.add('active'); currentPendingProducts = []; return; }
@@ -2791,18 +2968,19 @@ function openPendingShopModal(shopId) {
       var remK = (parseInt(it.kg) || 0) - (parseInt(it.deliveredKg) || 0);
       if (remM <= 0 && remK <= 0) continue;
       var pName = it.product;
-      if (!productMap[pName]) { productMap[pName] = { maund: 0, kg: 0, kgList: [], orderIds: [], amount: 0 }; productOrder.push(pName); }
+      if (!productMap[pName]) { productMap[pName] = { maund: 0, kg: 0, kgList: [], orderIds: [], amount: 0, dates: {} }; productOrder.push(pName); }
       productMap[pName].maund += remM; productMap[pName].kg += remK;
       productMap[pName].amount += (parseInt(it.amount) || 0);
       if (remK > 0) productMap[pName].kgList.push(remK);
       if (productMap[pName].orderIds.indexOf(o.id) === -1) productMap[pName].orderIds.push(o.id);
+      if (o.date) productMap[pName].dates[o.date] = true;
     }
   }
   var grandTotalKg = 0; currentPendingProducts = [];
   for (var p = 0; p < productOrder.length; p++) {
     var pm = productMap[productOrder[p]];
     grandTotalKg += (pm.maund * 40) + pm.kg;
-    currentPendingProducts.push({ product: productOrder[p], maund: pm.maund, kg: pm.kg, kgList: pm.kgList.slice(), orderIds: pm.orderIds.slice(), amount: pm.amount });
+    currentPendingProducts.push({ product: productOrder[p], maund: pm.maund, kg: pm.kg, kgList: pm.kgList.slice(), orderIds: pm.orderIds.slice(), amount: pm.amount, dates: pm.dates });
   }
   var linesHtml = '';
   for (var p = 0; p < currentPendingProducts.length; p++) {
@@ -2812,16 +2990,22 @@ function openPendingShopModal(shopId) {
     for (var q = 0; q < pd.kgList.length; q++) qtyParts.push(pd.kgList[q] + ' kg');
     var qtyStr = qtyParts.join(', ') || '0 kg';
     var amtTag = pd.amount > 0 ? '<span class="amt-tag">' + formatRs(pd.amount) + '</span>' : '';
+    var datesArr = Object.keys(pd.dates).sort();
+    var dateTag = '';
+    if (datesArr.length > 0) {
+      if (datesArr.length === 1) dateTag = '<span class="date-tag">📅 ' + formatDate(datesArr[0]) + '</span>';
+      else dateTag = '<span class="date-tag">📅 ' + formatDate(datesArr[0]) + ' … ' + formatDate(datesArr[datesArr.length - 1]) + '</span>';
+    }
     linesHtml += '<div class="product-line selectable-line">' +
       '<label class="deliver-checkbox"><input type="checkbox" class="pending-item-check" data-idx="' + p + '" onchange="updateDeliverBtn()" /></label>' +
-      '<div class="product-line-info"><span class="p-name">📦 ' + pd.product + '</span><span class="p-qty">' + qtyStr + '</span>' + amtTag + '</div>' +
+      '<div class="product-line-info"><span class="p-name">📦 ' + pd.product + '</span><span class="p-qty">' + qtyStr + '</span>' + amtTag + dateTag + '</div>' +
     '</div>';
   }
   var deliverBtnHtml = can('deliver') ? '<button class="btn primary small deliver-selected-btn" onclick="deliverSelectedItems(this)" id="deliverSelectedBtn" disabled><i class="fa fa-check"></i> Deliver (<span id="deliverCount">0</span>)</button>' : '';
   var selectAllHtml = '<button class="btn small" onclick="toggleSelectAllPending()" id="selectAllPendingBtn" style="width:100%;margin-top:10px;"><i class="fa fa-check-square"></i> Select All</button>';
   var html = '<div class="shop-group"><div class="shop-group-head">' +
     '<div style="flex:1;"><h4><i class="fa fa-store"></i> ' + shopName + '</h4>' +
-    '<p><i class="fa fa-phone"></i> ' + shopMobile + ' • ' + formatDate(today) + '</p></div>' +
+    '<p><i class="fa fa-phone"></i> ' + shopMobile + '</p></div>' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="shop-group-total">' + totalKgText(grandTotalKg) + '</span>' + deliverBtnHtml + '</div>' +
     '</div>' + linesHtml + selectAllHtml + '</div>';
   body.innerHTML = html;
@@ -2888,10 +3072,10 @@ function closePendingShopModal() {
 function refreshPendingShopModal() {
   var modal = document.getElementById('pendingShopModal'); if (!modal) return;
   var currentShopId = modal.getAttribute('data-shop-id'); if (!currentShopId) { closePendingShopModal(); return; }
-  var today = todayStr(); var stillPending = false;
+  var stillPending = false;
   for (var i = 0; i < orders.length; i++) {
     var o = orders[i];
-    if (o.shopId == currentShopId && o.date === today && (o.status === 'Pending' || o.status === 'Partial')) { stillPending = true; break; }
+    if (o.shopId == currentShopId && isOrderInRange(o.date, dashboardDateRange) && (o.status === 'Pending' || o.status === 'Partial')) { stillPending = true; break; }
   }
   if (!stillPending) closePendingShopModal(); else openPendingShopModal(currentShopId);
 }
@@ -3011,21 +3195,22 @@ function updateRouteNameField() {
   if (id) { for (var i = 0; i < routes.length; i++) { if (routes[i].id == id) { el.value = routes[i].name; return; } } }
   el.value = generateRouteName();
 }
-function shopHasTodayPendingOrder(shopId) {
-  var today = todayStr();
+function shopHasPendingOrderInRange(shopId, range) {
   for (var i = 0; i < orders.length; i++) {
     var o = orders[i];
-    if (o.shopId != shopId) continue; if (o.date !== today) continue;
+    if (o.shopId != shopId) continue;
+    if (!isOrderInRange(o.date, range)) continue;
     if (o.status !== 'Pending' && o.status !== 'Partial') continue;
     return true;
   }
   return false;
 }
 function getShopTodayProducts(shopId) {
-  var today = todayStr(); var productMap = {}, productOrder = [];
+  var productMap = {}, productOrder = [];
   for (var i = 0; i < orders.length; i++) {
     var o = orders[i];
-    if (o.shopId != shopId) continue; if (o.date !== today) continue;
+    if (o.shopId != shopId) continue;
+    if (!isOrderInRange(o.date, dashboardDateRange)) continue;
     if (o.status !== 'Pending' && o.status !== 'Partial') continue;
     for (var j = 0; j < o.items.length; j++) {
       var it = o.items[j];
@@ -3047,11 +3232,6 @@ function getShopTodayProducts(shopId) {
   }
   return result;
 }
-function getShopOrderSummaryText(shopId) {
-  var prods = getShopTodayProducts(shopId); var parts = [];
-  for (var i = 0; i < prods.length; i++) parts.push(prods[i].product + ': ' + prods[i].qtyStr);
-  return parts.join(' • ');
-}
 function renderRouteShopPicker() {
   var box = document.getElementById('routeShopPicker'); if (!box) return;
   var currentRouteId = document.getElementById('routeId').value || null;
@@ -3067,10 +3247,10 @@ function renderRouteShopPicker() {
   for (var i = 0; i < shopkeepers.length; i++) {
     var s = shopkeepers[i];
     if (shopRouteMap[s.id]) continue;
-    if (!shopHasTodayPendingOrder(s.id)) continue;
+    if (!shopHasPendingOrderInRange(s.id, dashboardDateRange)) continue;
     visible.push(s);
   }
-  if (visible.length === 0) { box.innerHTML = '<div class="route-empty-hint"><i class="fa fa-inbox"></i>Aaj koi free shopkeeper pending order nahi hai.</div>'; return; }
+  if (visible.length === 0) { box.innerHTML = '<div class="route-empty-hint"><i class="fa fa-inbox"></i>Is range mein koi free shopkeeper pending order nahi hai.</div>'; return; }
   var html = '';
   for (var i = 0; i < visible.length; i++) {
     var s = visible[i];
@@ -3272,7 +3452,7 @@ function getRouteStats(route) {
   for (var p = 0; p < productOrder.length; p++) { var name = productOrder[p]; var data = productMap[name]; breakdown.push({ product: name, maund: data.maund, kgList: data.kgList }); }
   var pendingShopCount = 0;
   var shopIds = Object.keys(uniqueShops);
-  for (var i = 0; i < shopIds.length; i++) { if (shopHasTodayPendingOrder(shopIds[i])) pendingShopCount++; }
+  for (var i = 0; i < shopIds.length; i++) { if (shopHasPendingOrderInRange(shopIds[i], dashboardDateRange)) pendingShopCount++; }
   return { totalKg: totalKg, totalMaund: totalMaund, totalQtyText: totalKgText(totalKg), pendingShopCount: pendingShopCount, itemCount: itemCount, productBreakdown: breakdown };
 }
 function renderRouteProductBreakdown(breakdown) {
@@ -3298,7 +3478,7 @@ function renderDashboardRoutes() {
   if (badge) badge.textContent = visibleRoutes.length;
   if (visibleRoutes.length === 0) {
     if (routes.length === 0) list.innerHTML = '<div class="empty"><i class="fa fa-route"></i>Abhi koi route nahi.</div>';
-    else list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Aaj koi route pending nahi.</div>';
+    else list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Is range mein koi route pending nahi.</div>';
     return;
   }
   var html = '';
@@ -3634,21 +3814,19 @@ function saveMultiOrder(btn) {
   setTimeout(function() { if (btn) enableButton(btn); openAmountModal(); }, 200);
 }
 function renderOrdersPage() {
-  var dateVal = document.getElementById('ordersDate').value || todayStr();
   var statusFilter = document.getElementById('ordersStatus').value;
   var filtered = [];
   for (var i = 0; i < orders.length; i++) {
     var o = orders[i];
-    if (o.date !== dateVal) continue;
+    if (!isOrderInRange(o.date, ordersDateRange)) continue;
     if (statusFilter === 'Pending' && o.status === 'Delivered') continue;
-    if (statusFilter === 'Delivered' && o.status !== 'Delivered') continue;
     filtered.push(o);
   }
   var list = document.getElementById('ordersList');
   var summary = document.getElementById('ordersSummary');
   if (filtered.length === 0) {
-    summary.innerHTML = '<div><p>' + formatDate(dateVal) + ' ka load</p><div class="big-num">0 kg</div></div>';
-    list.innerHTML = '<div class="empty"><i class="fa fa-truck"></i>Is din koi order nahi.</div>';
+    summary.innerHTML = '<div><p>' + formatDate(ordersDateRange.from) + ' - ' + formatDate(ordersDateRange.to) + '</p><div class="big-num">0 kg</div></div>';
+    list.innerHTML = '<div class="empty"><i class="fa fa-truck"></i>Is range mein koi order nahi.</div>';
     return;
   }
   var totalKg = 0; var totalAmount = 0;
@@ -3662,7 +3840,7 @@ function renderOrdersPage() {
       totalKg += (remM * 40) + remK;
     }
   }
-  summary.innerHTML = '<div><p>' + formatDate(dateVal) + ' ka baqi load</p><div class="big-num">' + totalKgText(totalKg) + '</div></div>' +
+  summary.innerHTML = '<div><p>' + formatDate(ordersDateRange.from) + ' - ' + formatDate(ordersDateRange.to) + '<br>Baqi Load</p><div class="big-num">' + totalKgText(totalKg) + '</div></div>' +
     (totalAmount > 0 ? '<div><p>Total Amount</p><div class="big-num">' + formatRs(totalAmount) + '</div></div>' : '');
   var grouped = {};
   for (var i = 0; i < filtered.length; i++) {
@@ -3721,7 +3899,7 @@ function renderOrdersPage() {
             getUserBadgeHtml(o.createdBy, 'small') +
             '<div class="shop-group-head-info">' +
               '<h4><i class="fa fa-receipt"></i> Order #' + (i + 1) + '</h4>' +
-              '<p style="font-size:12px;color:#64748b;"><i class="fa fa-calendar"></i> ' + getOrderDateTimeText(o) + '</p>' +
+              '<p style="font-size:12px;color:#64748b;"><i class="fa fa-calendar"></i> ' + formatDate(o.date) + ' • ' + getOrderDateTimeText(o) + '</p>' +
               '<p style="font-size:12px;color:#64748b;">👤 ' + (function() { var u = findUserByUsername(o.createdBy); return u ? getUserDisplayName(u) : (o.createdBy || 'Unknown'); })() + '</p>' +
             '</div></div>' +
           '<span class="shop-group-total">' + totalKgText(orderTotalKg) + ' • ' + formatRs(o.totalAmount || 0) + '</span>' +
@@ -3949,7 +4127,7 @@ function openEditOrderModal(orderId) {
   var nameEl = document.getElementById('editOrderShopName');
   if (nameEl) nameEl.textContent = shop ? shop.name : 'Unknown';
   var dateEl = document.getElementById('editOrderDateLabel');
-  if (dateEl) dateEl.textContent = '📅 ' + getOrderDateTimeText(order);
+  if (dateEl) dateEl.textContent = '📅 ' + formatDate(order.date) + ' • ' + getOrderDateTimeText(order);
   renderEditOrderItemsList();
   document.getElementById('editOrderModal').classList.add('active');
 }
@@ -4099,9 +4277,12 @@ function confirmCancelOrder(btn) {
 }
 function renderDelivery() {
   var pending = [];
-  for (var i = 0; i < orders.length; i++) { if (orders[i].status === 'Pending' || orders[i].status === 'Partial') pending.push(orders[i]); }
+  for (var i = 0; i < orders.length; i++) { 
+    if (!isOrderInRange(orders[i].date, deliveryDateRange)) continue;
+    if (orders[i].status === 'Pending' || orders[i].status === 'Partial') pending.push(orders[i]); 
+  }
   var list = document.getElementById('deliveryList');
-  if (pending.length === 0) { list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Koi pending order nahi!</div>'; return; }
+  if (pending.length === 0) { list.innerHTML = '<div class="empty"><i class="fa fa-check-circle"></i>Is range mein koi pending order nahi!</div>'; return; }
   var grouped = {};
   for (var i = 0; i < pending.length; i++) { var sid = pending[i].shopId; if (!grouped[sid]) grouped[sid] = []; grouped[sid].push(pending[i]); }
   var html = ''; var keys = Object.keys(grouped);
@@ -4131,9 +4312,10 @@ function renderDelivery() {
         var deliveredText = '';
         if (it.deliveredMaund > 0 || it.deliveredKg > 0) deliveredText = '<div class="p-delivered">✓ ' + qtyText(it.deliveredMaund, it.deliveredKg) + ' deliver</div>';
         var amtTag = '<span class="amt-tag">' + formatRs(it.amount || 0) + '</span>';
+        var dateTag = '<span class="date-tag">📅 ' + formatDate(o.date) + '</span>';
         var action = can('deliver') ? '<button class="btn small success" onclick="openDeliverModal(\'' + o.id + '\', \'' + it.product.replace(/'/g, "\\'") + '\')"><i class="fa fa-check"></i> Delivered</button>' : '';
         linesHtml += '<div class="product-line"><div class="product-line-info order-line-with-user">' +
-          userBadge + '<span class="p-name">📦 ' + it.product + '</span>' + amtTag +
+          userBadge + '<span class="p-name">📦 ' + it.product + '</span>' + amtTag + dateTag +
           '<span class="p-qty">' + qtyText(remM, remK) + '</span>' + deliveredText +
           '</div>' + action + '</div>';
       }
@@ -4397,112 +4579,42 @@ function viewShopHistory(shopId) {
 }
 function closeModal() { document.getElementById('modal').classList.remove('active'); }
 
-// =====================================================
-// Feature #4: Legacy Migration on startup
-// =====================================================
 function migrateLegacyData(user, callback) {
-  // Agar user ke paas businessId nahi hai, to legacy assign karo
-  if (user.businessId) {
-    if (callback) callback();
-    return;
-  }
+  if (user.businessId) { if (callback) callback(); return; }
   var legacyId = LEGACY_BUSINESS_ID;
   var legacyName = user.display || user.user || 'Legacy Business';
-  // 1. User update
-  db.collection('users').doc(String(user.id)).update({
-    businessId: legacyId,
-    businessName: legacyName
-  }).then(function() {
-    user.businessId = legacyId;
-    user.businessName = legacyName;
+  db.collection('users').doc(String(user.id)).update({ businessId: legacyId, businessName: legacyName }).then(function() {
+    user.businessId = legacyId; user.businessName = legacyName;
     localStorage.setItem('currentUser', JSON.stringify(user));
-    // 2. Business settings doc
-    db.collection('settings').doc('business_' + legacyId).set({
-      bizName: legacyName, businessId: legacyId
-    }).catch(function(e) { console.log('Legacy business settings:', e); });
-    // 3. Products settings — agar products collection mein hai to migrate
+    db.collection('settings').doc('business_' + legacyId).set({ bizName: legacyName, businessId: legacyId }).catch(function(e) { console.log(e); });
     db.collection('settings').doc('products').get().then(function(doc) {
       if (doc.exists) {
         var prodList = doc.data().list || [];
-        if (prodList.length > 0) {
-          db.collection('settings').doc('products_' + legacyId).set({
-            list: prodList, businessId: legacyId
-          }).catch(function(e) { console.log('Legacy products settings:', e); });
-        }
+        if (prodList.length > 0) db.collection('settings').doc('products_' + legacyId).set({ list: prodList, businessId: legacyId }).catch(function(e) { console.log(e); });
       }
     }).catch(function(e) { console.log(e); });
-    // 4. Shopkeepers migrate
-    db.collection('shopkeepers').get().then(function(snap) {
-      if (snap.empty) return;
-      var batch = db.batch(); var count = 0;
-      snap.forEach(function(doc) {
-        var d = doc.data();
-        if (!d.businessId) { batch.update(doc.ref, { businessId: legacyId }); count++; }
+    var collections = ['shopkeepers', 'orders', 'routes', 'accounts', 'whatsappQueue'];
+    var chain = Promise.resolve();
+    collections.forEach(function(colName) {
+      chain = chain.then(function() {
+        return db.collection(colName).get().then(function(snap) {
+          if (snap.empty) return;
+          var batch = db.batch(); var count = 0;
+          snap.forEach(function(doc) { var d = doc.data(); if (!d.businessId) { batch.update(doc.ref, { businessId: legacyId }); count++; } });
+          if (count > 0) return batch.commit();
+        });
       });
-      if (count > 0) return batch.commit();
-    }).then(function() {
-      // 5. Orders migrate
-      return db.collection('orders').get();
-    }).then(function(snap) {
+    });
+    chain.then(function() { return db.collection('users').get(); }).then(function(snap) {
       if (!snap || snap.empty) return;
       var batch = db.batch(); var count = 0;
       snap.forEach(function(doc) {
         var d = doc.data();
-        if (!d.businessId) { batch.update(doc.ref, { businessId: legacyId }); count++; }
+        if (!d.businessId && doc.id !== String(user.id)) { batch.update(doc.ref, { businessId: legacyId }); count++; }
       });
       if (count > 0) return batch.commit();
-    }).then(function() {
-      // 6. Routes migrate
-      return db.collection('routes').get();
-    }).then(function(snap) {
-      if (!snap || snap.empty) return;
-      var batch = db.batch(); var count = 0;
-      snap.forEach(function(doc) {
-        var d = doc.data();
-        if (!d.businessId) { batch.update(doc.ref, { businessId: legacyId }); count++; }
-      });
-      if (count > 0) return batch.commit();
-    }).then(function() {
-      // 7. Accounts migrate
-      return db.collection('accounts').get();
-    }).then(function(snap) {
-      if (!snap || snap.empty) return;
-      var batch = db.batch(); var count = 0;
-      snap.forEach(function(doc) {
-        var d = doc.data();
-        if (!d.businessId) { batch.update(doc.ref, { businessId: legacyId }); count++; }
-      });
-      if (count > 0) return batch.commit();
-    }).then(function() {
-      // 8. WhatsApp Queue migrate
-      return db.collection('whatsappQueue').get();
-    }).then(function(snap) {
-      if (!snap || snap.empty) return;
-      var batch = db.batch(); var count = 0;
-      snap.forEach(function(doc) {
-        var d = doc.data();
-        if (!d.businessId) { batch.update(doc.ref, { businessId: legacyId }); count++; }
-      });
-      if (count > 0) return batch.commit();
-    }).then(function() {
-      // 9. Other users (staff) migrate — same username pattern
-      return db.collection('users').get();
-    }).then(function(snap) {
-      if (!snap || snap.empty) return;
-      var batch = db.batch(); var count = 0;
-      snap.forEach(function(doc) {
-        var d = doc.data();
-        if (!d.businessId && doc.id !== String(user.id)) {
-          // Purane staff users bhi legacy ke andar hain
-          // Check karo ke ye staff admin ka hai ya nahi (koi direct link nahi, isliye sabko legacy assign karo)
-          batch.update(doc.ref, { businessId: legacyId }); count++;
-        }
-      });
-      if (count > 0) return batch.commit();
-    }).then(function() {
-      console.log('✅ Legacy migration complete');
-      if (callback) callback();
-    }).catch(function(e) { console.log('Legacy migration error:', e); if (callback) callback(); });
+    }).then(function() { console.log('✅ Legacy migration complete'); if (callback) callback(); })
+    .catch(function(e) { console.log('Legacy migration error:', e); if (callback) callback(); });
   }).catch(function(e) { console.log('User migration error:', e); if (callback) callback(); });
 }
 
@@ -4533,19 +4645,13 @@ function decideStartupScreen() {
     currentUser = cachedUser; isLoggedIn = true;
     currentBusinessId = cachedUser.businessId || null;
     currentBusinessName = cachedUser.businessName || null;
-    if (currentUser.pin && String(currentUser.pin).length === 4) {
-      showPinScreenOnly();
-    } else {
-      showAppScreenOnly(); showApp();
-    }
-    // Legacy migration — agar businessId nahi hai to migrate karo
+    if (currentUser.pin && String(currentUser.pin).length === 4) showPinScreenOnly();
+    else { showAppScreenOnly(); showApp(); }
     if (!currentBusinessId && firebaseReady) {
       migrateLegacyData(currentUser, function() {
         currentBusinessId = currentUser.businessId;
         currentBusinessName = currentUser.businessName;
         if (currentBusinessId) {
-          console.log('✅ After migration, businessId:', currentBusinessId);
-          // Reload listeners with new businessId
           setupRealtimeListeners();
           showToast('✅ Aap ka purana data migrate ho gaya', 'success', 4000);
         }
