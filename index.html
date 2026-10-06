@@ -77,6 +77,10 @@
       <div class="form-group"><label><i class="fa fa-user"></i> Username *</label><input type="text" id="signupUser" autocomplete="off" /></div>
       <div class="form-group"><label><i class="fa fa-lock"></i> Password *</label><input type="password" id="signupPass" /></div>
       <div class="form-group"><label><i class="fa fa-lock"></i> Confirm Password *</label><input type="password" id="signupPass2" /></div>
+      <div class="form-group">
+        <label><i class="fa fa-key"></i> Super Admin Code *</label>
+        <input type="text" id="signupSuperCode" placeholder="Super Admin Code daalein" autocomplete="off" />
+      </div>
       <button class="btn primary big" onclick="doSignup()"><i class="fa fa-user-plus"></i> Admin Account Banayein</button>
       <button class="btn big" onclick="hideSignup()">Cancel</button>
     </div>
@@ -166,6 +170,9 @@
 
 <main class="main" id="main">
 
+  <!-- ============================================== -->
+  <!-- DASHBOARD (Feature #5 + Feature #7) -->
+  <!-- ============================================== -->
   <section id="dashboard" class="page active">
     <div class="page-header">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
@@ -173,7 +180,7 @@
           <h1>Dashboard</h1>
           <p class="page-sub" id="todayDateLabel">—</p>
         </div>
-        <div>
+        <div class="dash-header-btns">
           <button class="btn small edit-dash-btn" onclick="toggleDashboardEdit()" id="editDashBtn">
             <i class="fa fa-pen"></i> Edit Dashboard
           </button>
@@ -183,8 +190,39 @@
           <button class="btn small danger" onclick="resetDashboardLayout()" id="resetDashBtn" style="display:none;">
             <i class="fa fa-rotate-left"></i> Reset
           </button>
+          <button class="btn small edit-date-btn" onclick="toggleDashboardDateFilter()" id="editDateBtn">
+            <i class="fa fa-calendar"></i> Edit Date
+          </button>
+          <button class="btn primary small" onclick="toggleDashboardDateFilter()" id="doneDateBtn" style="display:none;">
+            <i class="fa fa-check"></i> Done
+          </button>
         </div>
       </div>
+    </div>
+
+    <!-- Feature #7: Date Range Filter (Collapsible) -->
+    <div id="dashboardDateFilter" class="date-range-filter" style="display:none;">
+      <div class="drf-row">
+        <div class="drf-field">
+          <label><i class="fa fa-calendar"></i> From Date</label>
+          <input type="date" id="dashboardFromDate" onchange="onDashboardDateChange()" />
+        </div>
+        <div class="drf-field">
+          <label><i class="fa fa-calendar"></i> To Date</label>
+          <input type="date" id="dashboardToDate" onchange="onDashboardDateChange()" />
+        </div>
+      </div>
+      <div class="drf-quick">
+        <button class="drf-quick-btn" onclick="setDashboardQuickRange(1, 'today')">Aaj</button>
+        <button class="drf-quick-btn" onclick="setDashboardQuickRange(7, 'days')">7 Din</button>
+        <button class="drf-quick-btn active" onclick="setDashboardQuickRange(1, 'month')">1 Mahina</button>
+        <button class="drf-quick-btn" onclick="setDashboardQuickRange(3, 'months')">3 Mahine</button>
+      </div>
+    </div>
+
+    <!-- Feature #7: Current Range Display Text -->
+    <div id="dashboardRangeDisplay" class="dashboard-range-display">
+      <i class="fa fa-calendar"></i> Showing: <span id="dashboardRangeText">—</span>
     </div>
 
     <div id="dashEditPanel" class="dash-edit-panel" style="display:none;">
@@ -217,14 +255,14 @@
     <div id="sec-cards" class="dash-section">
       <div class="cards" id="cardsWrap">
         <div class="card blue"><div class="card-icon"><i class="fa fa-users"></i></div><div><h3 id="totalShopkeepers">0</h3><p>Shopkeepers</p></div></div>
-        <div class="card orange"><div class="card-icon"><i class="fa fa-calendar-day"></i></div><div><h3 id="todayOrders">0</h3><p>Aaj ke Orders</p></div></div>
-        <div class="card red"><div class="card-icon"><i class="fa fa-hourglass-half"></i></div><div><h3 id="pendingOrders">0</h3><p>Pending</p></div></div>
-        <div class="card green"><div class="card-icon"><i class="fa fa-check-circle"></i></div><div><h3 id="deliveredOrders">0</h3><p>Delivered</p></div></div>
+        <div class="card orange"><div class="card-icon"><i class="fa fa-calendar-day"></i></div><div><h3 id="todayOrders">0</h3><p id="todayOrdersLabel">Aaj ke Orders</p></div></div>
+        <div class="card red"><div class="card-icon"><i class="fa fa-hourglass-half"></i></div><div><h3 id="pendingOrders">0</h3><p id="pendingOrdersLabel">Pending</p></div></div>
+        <div class="card green"><div class="card-icon"><i class="fa fa-check-circle"></i></div><div><h3 id="deliveredOrders">0</h3><p id="deliveredOrdersLabel">Delivered</p></div></div>
       </div>
     </div>
 
     <div id="sec-pendingShops" class="dash-section box">
-      <div class="box-head"><h2><i class="fa fa-bell"></i> Today's Pending Shopkeeper Order</h2><span class="pill" id="pendingShopBadge">0</span></div>
+      <div class="box-head"><h2><i class="fa fa-bell"></i> Pending Shopkeeper Order</h2><span class="pill" id="pendingShopBadge">0</span></div>
       <div id="pendingShopList" class="pending-shop-list"></div>
     </div>
 
@@ -326,14 +364,35 @@
       <h1><i class="fa fa-truck"></i> Orders / Loading</h1>
       <p class="page-sub">Kis dukaan pe kitna maal dena hai</p>
     </div>
-    <div class="filters">
-      <input type="date" id="ordersDate" onchange="renderOrdersPage()" />
-      <select id="ordersStatus" onchange="renderOrdersPage()">
-        <option value="Pending">Pending</option>
-        <option value="Delivered">Delivered</option>
-        <option value="all">Sab</option>
-      </select>
+
+    <div class="date-range-filter">
+      <div class="drf-row">
+        <div class="drf-field">
+          <label><i class="fa fa-calendar"></i> From Date</label>
+          <input type="date" id="ordersFromDate" onchange="onOrdersDateChange()" />
+        </div>
+        <div class="drf-field">
+          <label><i class="fa fa-calendar"></i> To Date</label>
+          <input type="date" id="ordersToDate" onchange="onOrdersDateChange()" />
+        </div>
+      </div>
+      <div class="drf-quick">
+        <button class="drf-quick-btn" onclick="setOrdersQuickRange(1, 'today')">Aaj</button>
+        <button class="drf-quick-btn" onclick="setOrdersQuickRange(7, 'days')">7 Din</button>
+        <button class="drf-quick-btn active" onclick="setOrdersQuickRange(1, 'month')">1 Mahina</button>
+        <button class="drf-quick-btn" onclick="setOrdersQuickRange(3, 'months')">3 Mahine</button>
+      </div>
+      <div class="drf-row" style="margin-top:10px;">
+        <div class="drf-field">
+          <label><i class="fa fa-filter"></i> Status</label>
+          <select id="ordersStatus" onchange="renderOrdersPage()">
+            <option value="Pending" selected>Pending / Partial</option>
+            <option value="all">Sab</option>
+          </select>
+        </div>
+      </div>
     </div>
+
     <div class="load-summary" id="ordersSummary"></div>
     <div id="ordersList" class="list"></div>
   </section>
@@ -517,6 +576,26 @@
       <h1>Delivery</h1>
       <p class="page-sub">Pending orders shopkeeper ke hisaab se</p>
     </div>
+
+    <div class="date-range-filter">
+      <div class="drf-row">
+        <div class="drf-field">
+          <label><i class="fa fa-calendar"></i> From Date</label>
+          <input type="date" id="deliveryFromDate" onchange="onDeliveryDateChange()" />
+        </div>
+        <div class="drf-field">
+          <label><i class="fa fa-calendar"></i> To Date</label>
+          <input type="date" id="deliveryToDate" onchange="onDeliveryDateChange()" />
+        </div>
+      </div>
+      <div class="drf-quick">
+        <button class="drf-quick-btn" onclick="setDeliveryQuickRange(1, 'today')">Aaj</button>
+        <button class="drf-quick-btn" onclick="setDeliveryQuickRange(7, 'days')">7 Din</button>
+        <button class="drf-quick-btn active" onclick="setDeliveryQuickRange(1, 'month')">1 Mahina</button>
+        <button class="drf-quick-btn" onclick="setDeliveryQuickRange(3, 'months')">3 Mahine</button>
+      </div>
+    </div>
+
     <div id="deliveryList" class="list"></div>
   </section>
 
