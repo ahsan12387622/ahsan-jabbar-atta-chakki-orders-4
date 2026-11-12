@@ -1631,38 +1631,53 @@ function deliverAllOrdersFromModal(shopId, btn) {
   }, 0);
 }
 
+// =====================================================
+// PAYMENT SPLIT — INSTALLMENTS STYLE (Accounts/Wasooli jesa)
+// =====================================================
 function openPaymentSplitModal(order) {
   if (!order) return;
   currentSplitOrderId = order.id;
   currentSplitItems = [];
-  var totalOrderAmount = 0;
+  var totalPending = 0;
+
   for (var i = 0; i < order.items.length; i++) {
     var it = order.items[i];
     var amt = parseInt(it.amount) || 0;
     var paidAmt = parseInt(it.paidAmount) || 0;
     var pendAmt = parseInt(it.pendingAmount);
+
+    // Agar pendingAmount set nahi hai to calculate karo
     if (isNaN(pendAmt)) pendAmt = amt - paidAmt;
-    totalOrderAmount += amt;
+    if (pendAmt < 0) pendAmt = 0;
+
+    totalPending += pendAmt;
+
     currentSplitItems.push({
       product: it.product,
-      amount: amt,
-      paid: paidAmt,
-      pending: pendAmt,
+      amount: amt,              // Original amount (reference ke liye)
+      alreadyPaid: paidAmt,     // Pehle se kitna diya
+      remaining: pendAmt,       // Abhi kitna baqi hai
+      paid: 0,                  // Is baar kitna de raha hai (naya)
+      pending: pendAmt,         // Is baar ke baad kitna baqi
       maund: parseInt(it.maund) || 0,
       kg: parseInt(it.kg) || 0
     });
   }
-  var orderPaid = parseInt(order.paidAmount) || 0;
+
   var nameEl = document.getElementById('splitShopName');
   var shop = getShopById(order.shopId);
   if (nameEl && shop) {
     var farziTag = (shop.category === 'farzi') ? ' (Farzi)' : '';
     nameEl.textContent = shop.name + farziTag + ' — ' + getOrderDateTimeText(order);
   }
+
+  // Total ab REMAINING (pending) dikhao, na ke original
   var totalEl = document.getElementById('splitTotalAmount');
-  if (totalEl) totalEl.textContent = formatRs(totalOrderAmount);
+  if (totalEl) totalEl.textContent = formatRs(totalPending);
+
   var paidInput = document.getElementById('splitPaidInput');
-  if (paidInput) paidInput.value = orderPaid > 0 ? orderPaid : '';
+  if (paidInput) paidInput.value = '';   // Har baar khaali — naya payment
+
   renderSplitItemsList();
   updateSplitPendingText();
   document.getElementById('paymentSplitModal').classList.add('active');
@@ -1679,27 +1694,45 @@ function renderSplitItemsList() {
     list.innerHTML = '<div class="empty">Koi product nahi.</div>';
     return;
   }
+
   var html = '';
   for (var i = 0; i < currentSplitItems.length; i++) {
     var it = currentSplitItems[i];
+
+    // Jo item already clear ho gaya, usko skip ya info dikhao
+    if (it.remaining <= 0) {
+      html += '<div class="split-item-row" style="opacity:0.55;border-left-color:#16a34a;">' +
+        '<div class="si-head">' +
+          '<span class="si-name">✅ ' + it.product + ' <small style="color:#64748b;">(' + qtyText(it.maund, it.kg) + ')</small></span>' +
+          '<span class="si-amount" style="color:#16a34a;">Clear</span>' +
+        '</div>' +
+      '</div>';
+      continue;
+    }
+
     var qtyStr = qtyText(it.maund, it.kg);
+    var paidBadge = it.alreadyPaid > 0
+      ? ' <small style="color:#16a34a;background:#dcfce7;padding:2px 8px;border-radius:8px;">✅ ' + formatRs(it.alreadyPaid) + ' diya</small>'
+      : '';
+
     html += '<div class="split-item-row">' +
       '<div class="si-head">' +
-        '<span class="si-name">📦 ' + it.product + ' <small style="color:#64748b;font-weight:500;">(' + qtyStr + ')</small></span>' +
-        '<span class="si-amount">' + formatRs(it.amount) + '</span>' +
+        '<span class="si-name">📦 ' + it.product + ' <small style="color:#64748b;font-weight:500;">(' + qtyStr + ')</small>' + paidBadge + '</span>' +
+        '<span class="si-amount" style="color:#f59e0b;">Baqi: ' + formatRs(it.remaining) + '</span>' +
       '</div>' +
       '<div class="si-inputs">' +
         '<div>' +
-          '<label>Diya (Rs.)</label>' +
-          '<input type="number" class="paid" min="0" max="' + it.amount + '" value="' + it.paid + '" data-idx="' + i + '" oninput="onSplitPaidInput(' + i + ', this.value)" />' +
+          '<label>Ab De Rahe Hain (Rs.)</label>' +
+          '<input type="number" class="paid" min="0" max="' + it.remaining + '" value="' + (it.paid > 0 ? it.paid : '') + '" placeholder="0" data-idx="' + i + '" oninput="onSplitPaidInput(' + i + ', this.value)" />' +
         '</div>' +
         '<div>' +
-          '<label>Pending (Rs.)</label>' +
-          '<input type="number" class="pending" min="0" max="' + it.amount + '" value="' + it.pending + '" data-idx="' + i + '" oninput="onSplitPendingInput(' + i + ', this.value)" />' +
+          '<label>Baqi Rahega (Rs.)</label>' +
+          '<input type="number" class="pending" min="0" max="' + it.remaining + '" value="' + it.pending + '" data-idx="' + i + '" oninput="onSplitPendingInput(' + i + ', this.value)" />' +
         '</div>' +
       '</div>' +
     '</div>';
   }
+
   list.innerHTML = html;
 }
 function onSplitPaidInput(idx, val) {
@@ -1707,9 +1740,10 @@ function onSplitPaidInput(idx, val) {
   var it = currentSplitItems[idx];
   var paid = parseInt(val) || 0;
   if (paid < 0) paid = 0;
-  if (paid > it.amount) paid = it.amount;
+  if (paid > it.remaining) paid = it.remaining;   // Max = remaining, na ke original
   it.paid = paid;
-  it.pending = it.amount - paid;
+  it.pending = it.remaining - paid;
+
   var pendingInput = document.querySelector('.split-item-row .pending[data-idx="' + idx + '"]');
   if (pendingInput) pendingInput.value = it.pending;
   recalculateSplitTotal();
@@ -1719,45 +1753,55 @@ function onSplitPendingInput(idx, val) {
   var it = currentSplitItems[idx];
   var pending = parseInt(val) || 0;
   if (pending < 0) pending = 0;
-  if (pending > it.amount) pending = it.amount;
+  if (pending > it.remaining) pending = it.remaining;
   it.pending = pending;
-  it.paid = it.amount - pending;
+  it.paid = it.remaining - pending;
+
   var paidInput = document.querySelector('.split-item-row .paid[data-idx="' + idx + '"]');
   if (paidInput) paidInput.value = it.paid;
   recalculateSplitTotal();
 }
 function recalculateSplitTotal() {
-  var totalPaid = 0;
-  for (var i = 0; i < currentSplitItems.length; i++) { totalPaid += currentSplitItems[i].paid; }
+  var totalPaidNow = 0;
+  for (var i = 0; i < currentSplitItems.length; i++) {
+    totalPaidNow += currentSplitItems[i].paid || 0;
+  }
   var paidInput = document.getElementById('splitPaidInput');
-  if (paidInput) paidInput.value = totalPaid;
+  if (paidInput) paidInput.value = totalPaidNow > 0 ? totalPaidNow : '';
   updateSplitPendingText();
 }
 function updateSplitPendingText() {
-  var totalOrder = 0, totalPaid = 0;
+  var totalRemainingBefore = 0;
+  var totalPaidNow = 0;
   for (var i = 0; i < currentSplitItems.length; i++) {
-    totalOrder += currentSplitItems[i].amount;
-    totalPaid += currentSplitItems[i].paid;
+    totalRemainingBefore += currentSplitItems[i].remaining || 0;
+    totalPaidNow += currentSplitItems[i].paid || 0;
   }
-  var pending = totalOrder - totalPaid;
+  var pendingAfter = totalRemainingBefore - totalPaidNow;
   var el = document.getElementById('splitPendingText');
-  if (el) el.textContent = formatRs(pending);
+  if (el) el.textContent = formatRs(pendingAfter);
 }
 function syncSplitFromPaidInput() {
   var paidInput = document.getElementById('splitPaidInput');
   if (!paidInput) return;
-  var totalPaid = parseInt(paidInput.value) || 0;
-  if (totalPaid < 0) totalPaid = 0;
-  var totalOrder = 0;
-  for (var i = 0; i < currentSplitItems.length; i++) totalOrder += currentSplitItems[i].amount;
-  if (totalPaid > totalOrder) { totalPaid = totalOrder; paidInput.value = totalPaid; }
-  var remaining = totalPaid;
+  var totalPaidNow = parseInt(paidInput.value) || 0;
+  if (totalPaidNow < 0) totalPaidNow = 0;
+
+  var totalRemaining = 0;
+  for (var i = 0; i < currentSplitItems.length; i++) totalRemaining += currentSplitItems[i].remaining;
+
+  if (totalPaidNow > totalRemaining) {
+    totalPaidNow = totalRemaining;
+    paidInput.value = totalPaidNow;
+  }
+
+  var remainingDist = totalPaidNow;
   for (var i = 0; i < currentSplitItems.length; i++) {
     var it = currentSplitItems[i];
-    var give = Math.min(it.amount, remaining);
+    var give = Math.min(it.remaining, remainingDist);
     it.paid = give;
-    it.pending = it.amount - give;
-    remaining -= give;
+    it.pending = it.remaining - give;
+    remainingDist -= give;
   }
   renderSplitItemsList();
   updateSplitPendingText();
@@ -1765,34 +1809,55 @@ function syncSplitFromPaidInput() {
 function savePaymentSplit(btn) {
   if (!currentSplitOrderId) return;
   var order = null;
-  for (var i = 0; i < orders.length; i++) { if (orders[i].id == currentSplitOrderId) { order = orders[i]; break; } }
+  for (var i = 0; i < orders.length; i++) {
+    if (orders[i].id == currentSplitOrderId) { order = orders[i]; break; }
+  }
   if (!order) { closePaymentSplitModal(); return; }
-  var totalOrder = 0, totalPaid = 0;
-  for (var i = 0; i < currentSplitItems.length; i++) {
-    totalOrder += currentSplitItems[i].amount;
-    totalPaid += currentSplitItems[i].paid;
-  }
-  var totalPending = totalOrder - totalPaid;
+
+  // Har item par: purana paidAmount + naya paid
+  var totalOrderAmount = 0;
+  var totalPaidCumulative = 0;
+
   for (var i = 0; i < order.items.length; i++) {
-    var it = order.items[i];
+    var oIt = order.items[i];
+    var amt = parseInt(oIt.amount) || 0;
+    totalOrderAmount += amt;
+
+    // Split modal se is item ka naya payment nikalo
+    var splitItem = null;
     for (var j = 0; j < currentSplitItems.length; j++) {
-      if (currentSplitItems[j].product === it.product) {
-        it.paidAmount = currentSplitItems[j].paid;
-        it.pendingAmount = currentSplitItems[j].pending;
-        break;
-      }
+      if (currentSplitItems[j].product === oIt.product) { splitItem = currentSplitItems[j]; break; }
     }
+
+    var prevPaid = parseInt(oIt.paidAmount) || 0;
+    var newPaidNow = splitItem ? (parseInt(splitItem.paid) || 0) : 0;
+
+    // Cumulative = pehle jo diya + ab jo de rahe
+    var cumulativePaid = prevPaid + newPaidNow;
+    if (cumulativePaid > amt) cumulativePaid = amt;   // Amount se zyada nahi
+    if (cumulativePaid < 0) cumulativePaid = 0;
+
+    oIt.paidAmount = cumulativePaid;
+    oIt.pendingAmount = amt - cumulativePaid;
+
+    totalPaidCumulative += cumulativePaid;
   }
-  order.paidAmount = totalPaid;
-  order.pendingAmount = totalPending;
+
+  var totalPendingAfter = totalOrderAmount - totalPaidCumulative;
+
+  order.paidAmount = totalPaidCumulative;
+  order.pendingAmount = totalPendingAfter;
   order.splitUpdatedAt = new Date().toISOString();
-  if (totalPending <= 0) {
+  order.lastPaymentBy = currentUser ? currentUser.user : 'unknown';
+
+  if (totalPendingAfter <= 0) {
     order.amountStatus = 'paid';
     order.paidAt = new Date().toISOString();
     order.paidBy = currentUser ? currentUser.user : 'unknown';
   } else {
     order.amountStatus = 'pending';
   }
+
   if (firebaseReady) {
     db.collection('orders').doc(String(order.id)).update({
       items: order.items,
@@ -1801,14 +1866,25 @@ function savePaymentSplit(btn) {
       amountStatus: order.amountStatus,
       paidAt: order.paidAt || null,
       paidBy: order.paidBy || null,
-      splitUpdatedAt: order.splitUpdatedAt
+      splitUpdatedAt: order.splitUpdatedAt,
+      lastPaymentBy: order.lastPaymentBy
     }).catch(function(e) { console.log(e); });
   }
+
   if (btn) enableButton(btn);
   closePaymentSplitModal();
-  showToast(totalPending <= 0 ? '✅ Poori payment clear!' : '✅ Split save ho gaya — ' + formatRs(totalPending) + ' pending', 'success');
+
+  if (totalPendingAfter <= 0) {
+    showToast('✅ Poori payment clear ho gayi!', 'success');
+  } else {
+    showToast('✅ Payment save — ' + formatRs(totalPendingAfter) + ' baqi', 'success');
+  }
+
   renderPendingAmounts();
   renderDashboard();
+  renderOrdersPage();
+  renderDelivery();
+
   if (currentFarziCustomerDetailShopId) {
     renderFarziDetailOrders(currentFarziCustomerDetailShopId);
     var totalEl = document.getElementById('farziDetailTotal');
@@ -4717,23 +4793,19 @@ function shareBillImageOnWhatsapp() {
         navigator.share({
           files: [file],
           title: 'Order Bill',
-          text: 'Bill details' // Yeh text sath jayega
+          text: 'Bill details'
         }).then(() => {
           console.log('Shared successfully');
         }).catch(err => {
           console.log('Share cancelled', err);
         });
       });
-    return; // Yahan ruk jayenge, neeche wala text nahi chalega
+    return;
   }
 
-  // --- PURANA TAREEQA: WHATSAPP TEXT + PHOTO MANUALLY ATTACH ---
-  var waMsg = ""; // Yahan kuch nahi likha, taake direct chat khule
-  
+  var waMsg = "";
   var url = 'https://wa.me/' + number + (waMsg ? '?text=' + encodeURIComponent(waMsg) : '');
   window.open(url, '_blank');
-  
-  // User ko guide karein
   showToast('📌 WhatsApp khul gaya hai. Photo attach karne ke liye paperclip 🖇️ dabayein aur Gallery se photo select karein.', 'info', 6000);
 }
 
