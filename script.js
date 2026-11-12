@@ -60,6 +60,11 @@ var ordersQuickRange = 'month';
 var deliveryQuickRange = 'month';
 var dashboardDateFilterOpen = false;
 
+// Bill Variables
+var currentBillImageData = null;
+var currentBillOrderData = null;
+var currentBillShopData = null;
+
 function initFirebase(callback) {
   if (firebaseLoaded) { if (callback) callback(); return; }
   firebaseLoaded = true;
@@ -379,6 +384,7 @@ function handleBackButton() {
     else if (modalId === 'deleteWasooliModal') closeDeleteWasooliModal();
     else if (modalId === 'orderDetailModal') closeOrderDetailModal();
     else if (modalId === 'paymentSplitModal') closePaymentSplitModal();
+    else if (modalId === 'billPhotoModal') closeBillModal();
     else openModal.classList.remove('active');
     history.pushState({ modalClosed: true }, '');
     return;
@@ -709,48 +715,38 @@ function saveSettingsFirebase() {
 }
 
 // =====================================================
-// SELECTIVE RESET SYSTEM (NEW)
+// SELECTIVE RESET SYSTEM
 // =====================================================
 function confirmResetAllData() {
   if (!isAdmin()) { showToast('Sirf Admin reset kar sakta hai', 'error'); return; }
-
   var cbs = document.querySelectorAll('.reset-cb');
   for (var i = 0; i < cbs.length; i++) cbs[i].checked = false;
-
   var selectAll = document.getElementById('resetSelectAll');
   if (selectAll) selectAll.checked = false;
-
   var warning = document.getElementById('resetConfirmWarning');
   if (warning) warning.style.display = 'none';
-
   var btn = document.getElementById('resetConfirmBtn');
   if (btn) {
     btn.disabled = true;
     btn.innerHTML = '<i class="fa fa-rotate-left"></i> Haan, Reset Karein';
   }
-
   document.getElementById('resetConfirmModal').classList.add('active');
 }
-
 function toggleResetSelectAll(checked) {
   var cbs = document.querySelectorAll('.reset-cb');
   for (var i = 0; i < cbs.length; i++) cbs[i].checked = checked;
   updateResetConfirmBtn();
 }
-
 function updateResetConfirmBtn() {
   var cbs = document.querySelectorAll('.reset-cb');
   var selected = [];
   for (var i = 0; i < cbs.length; i++) {
     if (cbs[i].checked) selected.push(cbs[i].getAttribute('data-key'));
   }
-
   var selectAll = document.getElementById('resetSelectAll');
   if (selectAll) selectAll.checked = (selected.length === cbs.length);
-
   var btn = document.getElementById('resetConfirmBtn');
   var warning = document.getElementById('resetConfirmWarning');
-
   if (selected.length === 0) {
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa fa-rotate-left"></i> Haan, Reset Karein'; }
     if (warning) warning.style.display = 'none';
@@ -762,11 +758,9 @@ function updateResetConfirmBtn() {
     if (warning) warning.style.display = 'flex';
   }
 }
-
 function closeResetConfirmModal() {
   document.getElementById('resetConfirmModal').classList.remove('active');
 }
-
 function proceedResetConfirm() {
   var cbs = document.querySelectorAll('.reset-cb');
   var selected = [];
@@ -779,12 +773,10 @@ function proceedResetConfirm() {
   }
   doSelectiveReset(selected);
 }
-
 function doSelectiveReset(selectedItems) {
   closeResetConfirmModal();
   if (!firebaseReady) { showToast('Firebase load nahi hua', 'error'); return; }
   if (!currentBusinessId) { showToast('Business ID nahi mili', 'error'); return; }
-
   var labels = {
     shopkeepers: 'Shopkeepers',
     products: 'Products',
@@ -793,13 +785,10 @@ function doSelectiveReset(selectedItems) {
     accounts: 'Accounts',
     whatsappQueue: 'WhatsApp Queue'
   };
-
   var selectedLabels = [];
   for (var i = 0; i < selectedItems.length; i++) selectedLabels.push(labels[selectedItems[i]]);
-
   showToast('⏳ Reset ho raha hai: ' + selectedLabels.join(', '), 'info', 5000);
   var bizId = currentBusinessId;
-
   function deleteCollectionByName(colName) {
     return db.collection(colName).where('businessId', '==', bizId).get().then(function(snap) {
       if (snap.empty) return Promise.resolve();
@@ -808,9 +797,7 @@ function doSelectiveReset(selectedItems) {
       return batch.commit();
     });
   }
-
   var chain = Promise.resolve();
-
   if (selectedItems.indexOf('shopkeepers') !== -1) {
     chain = chain.then(function() { return deleteCollectionByName('shopkeepers'); });
   }
@@ -831,7 +818,6 @@ function doSelectiveReset(selectedItems) {
       return db.collection('settings').doc('products_' + bizId).set({ list: [], businessId: bizId });
     });
   }
-
   chain.then(function() {
     if (selectedItems.indexOf('shopkeepers') !== -1) shopkeepers = [];
     if (selectedItems.indexOf('orders') !== -1) { orders = []; offlineOrdersQueue = []; }
@@ -839,7 +825,6 @@ function doSelectiveReset(selectedItems) {
     if (selectedItems.indexOf('accounts') !== -1) { accounts = []; offlineAccountsQueue = []; localStorage.removeItem('offlineAccountsQueue'); }
     if (selectedItems.indexOf('whatsappQueue') !== -1) { whatsappQueue = []; localStorage.removeItem('whatsappQueueLocal'); }
     if (selectedItems.indexOf('products') !== -1) products = [];
-
     renderDashboard();
     renderShopkeepers();
     renderRoutes();
@@ -852,7 +837,6 @@ function doSelectiveReset(selectedItems) {
     renderWhatsappQueue();
     if (typeof renderProductPickerGrid === 'function') renderProductPickerGrid();
     if (isAdmin()) renderUsers();
-
     showToast('✅ Reset complete: ' + selectedLabels.join(', '), 'success', 4000);
   }).catch(function(e) {
     console.log('Reset error:', e);
@@ -1293,13 +1277,19 @@ function renderAccountDetailEntries() {
     var sign = e.type === 'order' ? '+' : '-';
     var cls = e.type === 'order' ? 'plus' : 'minus';
     var offlineTag = e._offlinePending ? ' <span style="background:#f59e0b;color:#fff;font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700;">⏳</span>' : '';
+    
     var actionsHtml = '';
     if (e.type === 'payment') {
       actionsHtml = '<div style="display:flex;gap:6px;margin-top:6px;">' +
         '<button class="btn small" onclick="openEditWasooliModal(\'' + e.id + '\')" style="padding:5px 10px;font-size:11px;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;"><i class="fa fa-edit"></i> Edit</button>' +
         '<button class="btn small danger" onclick="openDeleteWasooliModal(\'' + e.id + '\')" style="padding:5px 10px;font-size:11px;"><i class="fa fa-trash"></i> Delete</button>' +
       '</div>';
+    } else if (e.type === 'order' && e.orderId) {
+      actionsHtml = '<div style="margin-top:6px;">' +
+        '<button class="btn-bill-icon" onclick="openBillModal(\'' + e.orderId + '\')"><i class="fa fa-file-invoice"></i> View Bill</button>' +
+      '</div>';
     }
+
     html += '<div class="khata-entry ' + e.type + '">' +
       '<div class="ke-date">' + formatDateTimeObj(new Date(e.createdAt)) + offlineTag + '</div>' +
       '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">' +
@@ -1311,6 +1301,7 @@ function renderAccountDetailEntries() {
   }
   box.innerHTML = html;
 }
+
 function openWasooliModal() {
   if (!currentAccountShopId) return;
   var shop = getShopById(currentAccountShopId);
@@ -2935,12 +2926,13 @@ function renderPendingShopkeeperList() {
     var o = orders[i];
     if (!isOrderInRange(o.date, dashboardDateRange)) continue;
     if (o.status !== 'Pending' && o.status !== 'Partial') continue;
-    if (!grouped[o.shopId]) grouped[o.shopId] = { count: 0, usernames: {}, totalAmount: 0, dates: {} };
+    if (!grouped[o.shopId]) grouped[o.shopId] = { count: 0, usernames: {}, totalAmount: 0, dates: {}, latestOrderId: null };
     grouped[o.shopId].count++;
     var amt = parseInt(o.totalAmount) || 0;
     grouped[o.shopId].totalAmount += amt;
     if (o.date) grouped[o.shopId].dates[o.date] = true;
     if (o.createdBy) grouped[o.shopId].usernames[o.createdBy] = true;
+    grouped[o.shopId].latestOrderId = o.id;
   }
   var shopIds = Object.keys(grouped);
   if (badge) badge.textContent = shopIds.length;
@@ -2964,11 +2956,15 @@ function renderPendingShopkeeperList() {
     } else if (datesArr.length > 3) {
       dateSummary = '📅 ' + formatDate(datesArr[0]) + ' … ' + formatDate(datesArr[datesArr.length - 1]) + ' (' + datesArr.length + ' dates)';
     }
+    
+    var billBtn = '<button class="btn-bill-icon" onclick="event.stopPropagation(); openBillModal(\'' + grouped[sid].latestOrderId + '\')"><i class="fa fa-file-invoice"></i> Bill</button>';
+
     html += '<div class="pending-shop-name' + offlineClass + farziClass + '" onclick="openPendingShopModal(\'' + sid + '\')">' +
       '<div class="psn-info">' +
         '<span class="name-text"><i class="fa fa-store shop-icon"></i> ' + shopName + ' ' + userBadgesHtml + '</span>' +
         (dateSummary ? '<span class="psn-dates">' + dateSummary + '</span>' : '') +
         (totalAmt > 0 ? '<span class="psn-amount">💰 ' + formatRs(totalAmt) + '</span>' : '') +
+        '<div>' + billBtn + '</div>' +
       '</div>' +
       '<span><span class="order-count">' + count + '</span><i class="fa fa-chevron-right arrow-icon"></i></span></div>';
   }
@@ -3913,6 +3909,9 @@ function renderOrdersPage() {
           '<button class="btn btn-cancel-order" onclick="openCancelOrderModal(\'' + o.id + '\')"><i class="fa fa-times"></i> Cancel</button>' +
         '</div>';
       }
+      
+      var billBtnHtml = '<button class="btn-bill-icon" onclick="openBillModal(\'' + o.id + '\')"><i class="fa fa-file-invoice"></i> Bill Photo</button>';
+
       ordersHtml += '<div class="shop-group' + offlineClass + (isFarzi ? ' farzi-card' : '') + '" style="margin-top:10px;">' +
         '<div class="shop-group-head">' +
           '<div class="shop-group-head-with-user">' +
@@ -3923,7 +3922,7 @@ function renderOrdersPage() {
               '<p style="font-size:12px;color:#64748b;">👤 ' + (function() { var u = findUserByUsername(o.createdBy); return u ? getUserDisplayName(u) : (o.createdBy || 'Unknown'); })() + '</p>' +
             '</div></div>' +
           '<span class="shop-group-total">' + totalKgText(orderTotalKg) + ' • ' + formatRs(o.totalAmount || 0) + '</span>' +
-        '</div>' + orderItemsHtml + editCancelHtml + '</div>';
+        '</div>' + orderItemsHtml + billBtnHtml + editCancelHtml + '</div>';
     }
     var shopTotalAmt = 0;
     for (var i = 0; i < sOrders.length; i++) shopTotalAmt += parseInt(sOrders[i].totalAmount) || 0;
@@ -4579,6 +4578,164 @@ function viewShopHistory(shopId) {
   document.getElementById('modal').classList.add('active');
 }
 function closeModal() { document.getElementById('modal').classList.remove('active'); }
+
+// =====================================================
+// SMART BILL SYSTEM (IMAGE GENERATION + SHARE)
+// =====================================================
+function openBillModal(orderId) {
+  var order = null;
+  for (var i = 0; i < orders.length; i++) { if (orders[i].id == orderId) { order = orders[i]; break; } }
+  if (!order) { showToast('Order nahi mila', 'error'); return; }
+  
+  var shop = getShopById(order.shopId);
+  if (!shop) { showToast('Shopkeeper nahi mila', 'error'); return; }
+
+  currentBillOrderData = order;
+  currentBillShopData = shop;
+  currentBillImageData = null;
+
+  document.getElementById('billPhotoModal').classList.add('active');
+  document.getElementById('billLoading').style.display = 'block';
+  document.getElementById('billImageContainer').style.display = 'none';
+  document.getElementById('billActionButtons').style.display = 'none';
+  document.getElementById('billShareHint').style.display = 'none';
+
+  var bizName = settings.bizName || 'Atta Chakki';
+  var dateStr = formatDate(order.date);
+  var timeStr = getOrderDateTimeText(order);
+  var totalAmt = parseInt(order.totalAmount) || 0;
+  var paidAmt = parseInt(order.paidAmount) || 0;
+  var pendingAmt = parseInt(order.pendingAmount) || (totalAmt - paidAmt);
+
+  var rowsHtml = '';
+  for (var i = 0; i < order.items.length; i++) {
+    var it = order.items[i];
+    var qtyStr = qtyText(it.maund, it.kg);
+    var amt = parseInt(it.amount) || 0;
+    rowsHtml += '<tr><td>' + it.product + '</td><td>' + qtyStr + '</td><td>Rs. ' + amt + '</td></tr>';
+  }
+
+  var billHtml = 
+    '<div class="bill-header">' +
+      '<h1>🧾 ' + bizName + '</h1>' +
+      '<p>Order Bill / Receipt</p>' +
+    '</div>' +
+    '<div class="bill-info-row">' +
+      '<div class="bill-info-col">' +
+        '<p><strong>Bill To:</strong></p>' +
+        '<p>' + shop.name + '</p>' +
+        '<p>📱 ' + shop.mobile + '</p>' +
+        (shop.address ? '<p>📍 ' + shop.address + '</p>' : '') +
+      '</div>' +
+      '<div class="bill-info-col" style="text-align:right;">' +
+        '<p><strong>Date:</strong> ' + dateStr + '</p>' +
+        '<p><strong>Time:</strong> ' + timeStr + '</p>' +
+        '<p><strong>Status:</strong> ' + order.status + '</p>' +
+      '</div>' +
+    '</div>' +
+    '<table class="bill-table">' +
+      '<thead><tr><th>Product</th><th>Quantity</th><th>Amount</th></tr></thead>' +
+      '<tbody>' + rowsHtml + '</tbody>' +
+    '</table>';
+    
+  if (order.amountStatus) {
+    billHtml += '<div style="display:flex; justify-content:space-between; font-size:14px; margin-bottom:10px; font-weight:bold;">' +
+      '<span>Paid Amount:</span><span style="color:#16a34a;">Rs. ' + paidAmt + '</span></div>' +
+      '<div style="display:flex; justify-content:space-between; font-size:14px; margin-bottom:10px; font-weight:bold;">' +
+      '<span>Pending Amount:</span><span style="color:#f59e0b;">Rs. ' + pendingAmt + '</span></div>';
+  }
+
+  billHtml += 
+    '<div class="bill-total-box">' +
+      'Total Amount: Rs. ' + totalAmt +
+    '</div>' +
+    '<div class="bill-footer">' +
+      'Shukriya! Aap ka karobar hamare sath hai.<br>' +
+      'Generated by ' + bizName + ' — ' + getCurrentDateTimeText() +
+    '</div>';
+
+  var template = document.getElementById('billReceiptTemplate');
+  if (!template) {
+    template = document.createElement('div');
+    template.id = 'billReceiptTemplate';
+    document.body.appendChild(template);
+  }
+  template.innerHTML = billHtml;
+
+  html2canvas(template, {
+    scale: 2,
+    backgroundColor: '#ffffff',
+    useCORS: true,
+    logging: false
+  }).then(function(canvas) {
+    currentBillImageData = canvas.toDataURL('image/png');
+    
+    document.getElementById('billImagePreview').src = currentBillImageData;
+    document.getElementById('billLoading').style.display = 'none';
+    document.getElementById('billImageContainer').style.display = 'block';
+    document.getElementById('billActionButtons').style.display = 'flex';
+    document.getElementById('billShareHint').style.display = 'block';
+    
+    template.innerHTML = '';
+  }).catch(function(err) {
+    console.error(err);
+    showToast('❌ Bill image banane mein masla aaya', 'error');
+    closeBillModal();
+  });
+}
+
+function closeBillModal() {
+  document.getElementById('billPhotoModal').classList.remove('active');
+  document.getElementById('billImagePreview').src = '';
+  currentBillImageData = null;
+  currentBillOrderData = null;
+  currentBillShopData = null;
+}
+
+function downloadBillImage() {
+  if (!currentBillImageData || !currentBillOrderData) return;
+  var link = document.createElement('a');
+  var shopName = currentBillShopData ? currentBillShopData.name.replace(/\s+/g, '_') : 'Shop';
+  link.download = 'Bill_' + shopName + '_' + currentBillOrderData.date + '.png';
+  link.href = currentBillImageData;
+  link.click();
+  showToast('✅ Bill Download ho gayi!', 'success');
+}
+
+function shareBillImageOnWhatsapp() {
+  if (!currentBillOrderData || !currentBillShopData || !currentBillImageData) return;
+  
+  var number = formatWaNumber(currentBillShopData.mobile);
+  if (!number) { showToast('Mobile number galat hai', 'warning'); return; }
+
+  // --- NAYA TAREEQA: DIRECT PHOTO SHARE (Web Share API) ---
+  if (navigator.canShare && navigator.canShare({ files: [new File([""], "test.png", { type: "image/png" })] })) {
+    fetch(currentBillImageData)
+      .then(res => res.blob())
+      .then(blob => {
+        var file = new File([blob], 'Bill_' + currentBillShopData.name + '.png', { type: 'image/png' });
+        navigator.share({
+          files: [file],
+          title: 'Order Bill',
+          text: 'Bill details' // Yeh text sath jayega
+        }).then(() => {
+          console.log('Shared successfully');
+        }).catch(err => {
+          console.log('Share cancelled', err);
+        });
+      });
+    return; // Yahan ruk jayenge, neeche wala text nahi chalega
+  }
+
+  // --- PURANA TAREEQA: WHATSAPP TEXT + PHOTO MANUALLY ATTACH ---
+  var waMsg = ""; // Yahan kuch nahi likha, taake direct chat khule
+  
+  var url = 'https://wa.me/' + number + (waMsg ? '?text=' + encodeURIComponent(waMsg) : '');
+  window.open(url, '_blank');
+  
+  // User ko guide karein
+  showToast('📌 WhatsApp khul gaya hai. Photo attach karne ke liye paperclip 🖇️ dabayein aur Gallery se photo select karein.', 'info', 6000);
+}
 
 function migrateLegacyData(user, callback) {
   if (user.businessId) { if (callback) callback(); return; }
