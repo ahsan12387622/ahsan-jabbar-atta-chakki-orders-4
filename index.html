@@ -171,7 +171,7 @@
 <main class="main" id="main">
 
   <!-- ============================================== -->
-  <!-- DASHBOARD (Feature #5 + Feature #7) -->
+  <!-- DASHBOARD -->
   <!-- ============================================== -->
   <section id="dashboard" class="page active">
     <div class="page-header">
@@ -200,7 +200,6 @@
       </div>
     </div>
 
-    <!-- Feature #7: Date Range Filter (Collapsible) -->
     <div id="dashboardDateFilter" class="date-range-filter" style="display:none;">
       <div class="drf-row">
         <div class="drf-field">
@@ -220,7 +219,6 @@
       </div>
     </div>
 
-    <!-- Feature #7: Current Range Display Text -->
     <div id="dashboardRangeDisplay" class="dashboard-range-display">
       <i class="fa fa-calendar"></i> Showing: <span id="dashboardRangeText">—</span>
     </div>
@@ -762,9 +760,9 @@
     </div>
     <div class="box" id="resetDataBox" style="display:none;">
       <h3><i class="fa fa-rotate-left"></i> Reset Data</h3>
-      <p class="hint" style="color:#dc2626;font-weight:600;">⚠️ Sirf apne business ka data delete hoga</p>
+      <p class="hint" style="color:#dc2626;font-weight:600;">⚠️ Sirf apne business ka data delete hoga — aap choose kar sakte hain kya reset karna hai</p>
       <button class="btn primary" onclick="confirmResetAllData()" style="width:100%; margin-top:6px;">
-        <i class="fa fa-rotate-left"></i> 🔄 Reset All Data
+        <i class="fa fa-rotate-left"></i> 🔄 Reset Data (Selective)
       </button>
     </div>
     <div class="box" id="hiddenMenuBox" style="display:none;">
@@ -869,14 +867,109 @@
   </div>
 </div>
 
+<!-- ============================================== -->
+<!-- SELECTIVE RESET MODAL (NEW) -->
+<!-- ============================================== -->
 <div id="resetConfirmModal" class="modal">
   <div class="modal-content">
     <span class="close" onclick="closeResetConfirmModal()">&times;</span>
-    <h2><i class="fa fa-rotate-left" style="color:#dc2626;"></i> Reset All Data</h2>
-    <p class="hint" id="resetConfirmText" style="font-weight:600;color:#dc2626;font-size:15px;margin-top:8px;"></p>
-    <div id="resetConfirmBody" style="margin:14px 0;"></div>
-    <button class="btn primary big" onclick="proceedResetConfirm()" id="resetConfirmBtn"><i class="fa fa-rotate-left"></i> Haan, Reset Karein</button>
-    <button class="btn big" onclick="closeResetConfirmModal()"><i class="fa fa-times"></i> Cancel</button>
+    <h2><i class="fa fa-rotate-left" style="color:#dc2626;"></i> Reset Data</h2>
+    <p class="hint" style="font-weight:600;color:#dc2626;font-size:14px;margin-top:8px;">
+      Jo cheezein reset karni hain unko select karein. Sirf aap ke business ka data delete hoga.
+    </p>
+
+    <div class="reset-select-all-box">
+      <label class="reset-select-all-label">
+        <input type="checkbox" id="resetSelectAll" onchange="toggleResetSelectAll(this.checked)" />
+        <span><b>Sab Select Karein</b> (pooра reset)</span>
+      </label>
+    </div>
+
+    <div id="resetOptionsList" class="reset-options-list">
+
+      <label class="reset-option-item">
+        <input type="checkbox" class="reset-cb" data-key="shopkeepers" onchange="updateResetConfirmBtn()" />
+        <div class="reset-option-info">
+          <span class="reset-option-icon">🏪</span>
+          <div>
+            <div class="reset-option-name">Shopkeepers</div>
+            <div class="reset-option-desc">Tamam shopkeeper records delete honge</div>
+          </div>
+        </div>
+      </label>
+
+      <label class="reset-option-item">
+        <input type="checkbox" class="reset-cb" data-key="products" onchange="updateResetConfirmBtn()" />
+        <div class="reset-option-info">
+          <span class="reset-option-icon">📦</span>
+          <div>
+            <div class="reset-option-name">Products</div>
+            <div class="reset-option-desc">Product list khaali ho jayegi</div>
+          </div>
+        </div>
+      </label>
+
+      <label class="reset-option-item">
+        <input type="checkbox" class="reset-cb" data-key="orders" onchange="updateResetConfirmBtn()" />
+        <div class="reset-option-info">
+          <span class="reset-option-icon">🛒</span>
+          <div>
+            <div class="reset-option-name">Orders</div>
+            <div class="reset-option-desc">Tamam orders (pending + delivered) delete honge</div>
+          </div>
+        </div>
+      </label>
+
+      <label class="reset-option-item">
+        <input type="checkbox" class="reset-cb" data-key="routes" onchange="updateResetConfirmBtn()" />
+        <div class="reset-option-info">
+          <span class="reset-option-icon">🗺️</span>
+          <div>
+            <div class="reset-option-name">Delivery Routes</div>
+            <div class="reset-option-desc">Saare routes delete honge</div>
+          </div>
+        </div>
+      </label>
+
+      <label class="reset-option-item">
+        <input type="checkbox" class="reset-cb" data-key="accounts" onchange="updateResetConfirmBtn()" />
+        <div class="reset-option-info">
+          <span class="reset-option-icon">💰</span>
+          <div>
+            <div class="reset-option-name">Accounts / Khata</div>
+            <div class="reset-option-desc">Wasooli aur khata entries delete hongi</div>
+          </div>
+        </div>
+      </label>
+
+      <label class="reset-option-item">
+        <input type="checkbox" class="reset-cb" data-key="whatsappQueue" onchange="updateResetConfirmBtn()" />
+        <div class="reset-option-info">
+          <span class="reset-option-icon">📤</span>
+          <div>
+            <div class="reset-option-name">WhatsApp Queue</div>
+            <div class="reset-option-desc">Pending messages delete honge</div>
+          </div>
+        </div>
+      </label>
+
+    </div>
+
+    <p class="hint" style="font-size:12px;color:#64748b;margin-top:12px;">
+      <i class="fa fa-info-circle"></i> Users, PIN, business name <b>safe rahenge</b>.
+    </p>
+
+    <div id="resetConfirmWarning" class="reset-warning-box" style="display:none;">
+      <i class="fa fa-exclamation-triangle"></i>
+      <span><b>Warning:</b> Ye action undo nahi ho sakta. Confirm karne ke liye "Haan, Reset" dabayein.</span>
+    </div>
+
+    <button class="btn primary big" onclick="proceedResetConfirm()" id="resetConfirmBtn" disabled>
+      <i class="fa fa-rotate-left"></i> Haan, Reset Karein
+    </button>
+    <button class="btn big" onclick="closeResetConfirmModal()">
+      <i class="fa fa-times"></i> Cancel
+    </button>
   </div>
 </div>
 
